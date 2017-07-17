@@ -22,7 +22,7 @@ public:
     static void Init(v8::Local<v8::Object>);
 
 private:
-    NodeExpression(std::unique_ptr<Expression> expression_) :
+    NodeExpression(std::unique_ptr<TypedExpression> expression_) :
         expression(std::move(expression_))
     {};
 
@@ -34,7 +34,7 @@ private:
     static void IsZoomConstant(const Nan::FunctionCallbackInfo<v8::Value>&);
     static Nan::Persistent<v8::Function> constructor;
 
-    std::unique_ptr<Expression> expression;
+    std::unique_ptr<TypedExpression> expression;
 };
 
 } // namespace node_mbgl

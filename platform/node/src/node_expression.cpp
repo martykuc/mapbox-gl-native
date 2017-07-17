@@ -2,7 +2,6 @@
 #include "node_expression.hpp"
 
 #include <mbgl/style/expression/parse.hpp>
-#include <mbgl/style/expression/type_check.hpp>
 #include <mbgl/style/conversion/geojson.hpp>
 #include <mbgl/util/geojson.hpp>
 #include <nan.h>
@@ -42,20 +41,17 @@ void NodeExpression::Parse(const Nan::FunctionCallbackInfo<v8::Value>& info) {
     try {
         std::vector<CompileError> errors;
         auto parsed = parseExpression(expr, ParsingContext());
-        if (parsed.template is<std::unique_ptr<Expression>>()) {
-            const auto& e = parsed.template get<std::unique_ptr<Expression>>();
-            auto checked = typecheck(e->getType(), e);
-            if (checked.template is<std::unique_ptr<Expression>>()) {
-                auto nodeExpr = new NodeExpression(std::move(checked.template get<std::unique_ptr<Expression>>()));
+        if (parsed.template is<std::unique_ptr<UntypedExpression>>()) {
+            const auto& e = parsed.template get<std::unique_ptr<UntypedExpression>>();
+            auto checked = e->typecheck(errors);
+            if (checked) {
+                auto nodeExpr = new NodeExpression(std::move(*checked));
                 const int argc = 0;
                 v8::Local<v8::Value> argv[0] = {};
                 auto wrapped = Nan::NewInstance(cons, argc, argv).ToLocalChecked();
                 nodeExpr->Wrap(wrapped);
                 info.GetReturnValue().Set(wrapped);
                 return;
-            } else {
-                const auto& typeErrors = checked.template get<std::vector<CompileError>>();
-                errors.insert(errors.end(), typeErrors.begin(), typeErrors.end());
             }
         } else {
             errors.emplace_back(parsed.template get<CompileError>());
