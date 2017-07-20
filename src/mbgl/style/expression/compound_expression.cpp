@@ -172,10 +172,6 @@ std::unordered_map<std::string, CompoundExpression::Definition> CompoundExpressi
     define("-", [](float a, float b) -> Result<float> { return a - b; })
 );
 
-//        if (*op == "string") return LambdaExpression::parse<Assertion<std::string>>(value, context);
-//        if (*op == "number") return LambdaExpression::parse<Assertion<float>>(value, context);
-//        if (*op == "boolean") return LambdaExpression::parse<Assertion<bool>>(value, context);
-//        if (*op == "array") return Array::parse(value, context);
 //        if (*op == "to_string") return LambdaExpression::parse<ToString>(value, context);
 //        if (*op == "to_number") return LambdaExpression::parse<ToNumber>(value, context);
 //        if (*op == "to_boolean") return LambdaExpression::parse<ToBoolean>(value, context);

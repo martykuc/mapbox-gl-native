@@ -4,6 +4,9 @@
 #include <mbgl/style/expression/parsing_context.hpp>
 #include <mbgl/style/expression/expression.hpp>
 #include <mbgl/style/expression/compound_expression.hpp>
+#include <mbgl/style/expression/match.hpp>
+#include <mbgl/style/expression/curve.hpp>
+#include <mbgl/style/expression/coalesce.hpp>
 #include <mbgl/style/conversion.hpp>
 
 namespace mbgl {
@@ -63,6 +66,14 @@ ParseResult parseExpression(const V& value, const ParsingContext& context)
                 context.key()
             };
             return UntypedLiteral::parse(arrayMember(value, 1), ParsingContext(context, {1}, {"literal"}));
+        }
+        
+        if (*op == "match") {
+            return UntypedMatch::parse(value, context);
+        } else if (*op == "curve") {
+            return UntypedCurve::parse(value, context);
+        } else if (*op == "coalesce") {
+            return UntypedCoalesce::parse(value, context);
         }
         
         return UntypedCompoundExpression::parse(value, context);
