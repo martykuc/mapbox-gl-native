@@ -119,6 +119,47 @@ std::unordered_map<std::string, CompoundExpression::Definition> CompoundExpressi
     define("boolean", assertion<bool>),
     define("array", assertion<std::vector<Value>>), // TODO: [array, type, value], [array, type, length, value]
     
+    define("to_string", [](const Value& v) -> Result<std::string> { return stringify(v); }),
+    define("to_number", [](const Value& v) -> Result<float> {
+        optional<float> result = v.match(
+            [](const float f) -> optional<float> { return f; },
+            [](const std::string& s) -> optional<float> {
+                try {
+                    return std::stof(s);
+                } catch(std::exception) {
+                    return optional<float>();
+                }
+            },
+            [](const auto&) { return optional<float>(); }
+        );
+        if (!result) {
+            return EvaluationError {
+                "Could not convert " + stringify(v) + " to number."
+            };
+        }
+        return *result;
+    }),
+    define("to_boolean", [](const Value& v) -> Result<bool> {
+        return v.match(
+            [&] (float f) { return (bool)f; },
+            [&] (const std::string& s) { return s.length() > 0; },
+            [&] (bool b) { return b; },
+            [&] (const NullValue&) { return false; },
+            [&] (const auto&) { return true; }
+        );
+    }),
+    define("to_rgba", [](const mbgl::Color& color) -> Result<std::array<float, 4>> {
+        return std::array<float, 4> {{ color.r, color.g, color.b, color.a }};
+    }),
+    
+    define("parse_color", [](const std::string& colorString) -> Result<mbgl::Color> {
+        const auto& result = mbgl::Color::parse(colorString);
+        if (result) return *result;
+        return EvaluationError {
+            "Could not parse color from value '" + colorString + "'"
+        };
+    }),
+    
     std::pair<std::string, Definition>("get", defineGet()),
     
     define("+", [](const Varargs<float>& args) -> Result<float> {

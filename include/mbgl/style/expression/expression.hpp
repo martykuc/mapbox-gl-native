@@ -66,7 +66,13 @@ public:
     }
 };
 
-using EvaluationResult = Result<Value>;
+struct EvaluationResult : public Result<Value> {
+    using Result::Result;
+    
+    EvaluationResult(const std::array<float, 4>& arr) :
+        Result(std::vector<Value>(arr.begin(), arr.end()))
+    {}
+};
 
 struct CompileError {
     std::string message;
@@ -80,6 +86,7 @@ public:
     
     virtual bool isFeatureConstant() const { return true; }
     virtual bool isZoomConstant() const { return true; }
+    
     virtual EvaluationResult evaluate(const EvaluationParameters& params) const = 0;
     
     /*
