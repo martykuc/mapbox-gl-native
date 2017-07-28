@@ -284,7 +284,7 @@ public:
             checkedStops.emplace(stop.first, std::move(*checkedOutput));
         }
         
-        if (stops.size() > 0) return TypecheckResult();
+        if (errors.size() > 0) return TypecheckResult();
         
         return interpolation.match(
             [&](const StepInterpolation&) -> TypecheckResult {

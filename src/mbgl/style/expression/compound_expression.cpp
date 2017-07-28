@@ -71,13 +71,16 @@ static Definition defineGet() {
     definition.push_back(
         std::make_unique<Signature<Result<Value> (const EvaluationParameters&, const std::string&)>>(
             [](const EvaluationParameters& params, const std::string& key) -> Result<Value> {
-                const auto propertyValue = params.feature.getValue(key);
+                optional<mbgl::Value> propertyValue;
+                if (params.feature) {
+                    propertyValue = params.feature->getValue(key);
+                }
                 if (!propertyValue) {
                     return EvaluationError {
                         "Property '" + key + "' not found in feature.properties"
                     };
                 }
-                return convertValue(*propertyValue);
+                return Value(toExpressionValue(*propertyValue));
             },
             false
         )
@@ -117,7 +120,6 @@ std::unordered_map<std::string, CompoundExpression::Definition> CompoundExpressi
     define("number", assertion<float>),
     define("string", assertion<std::string>),
     define("boolean", assertion<bool>),
-    define("array", assertion<std::vector<Value>>), // TODO: [array, type, value], [array, type, length, value]
     
     define("to_string", [](const Value& v) -> Result<std::string> { return stringify(v); }),
     define("to_number", [](const Value& v) -> Result<float> {
@@ -158,6 +160,15 @@ std::unordered_map<std::string, CompoundExpression::Definition> CompoundExpressi
         return EvaluationError {
             "Could not parse color from value '" + colorString + "'"
         };
+    }),
+    
+    define("zoom", [](const EvaluationParameters& params) -> Result<float> {
+        if (!params.zoom) {
+            return EvaluationError {
+                "The 'zoom' expression is unavailable in the current evaluation context."
+            };
+        }
+        return *(params.zoom);
     }),
     
     std::pair<std::string, Definition>("get", defineGet()),

@@ -1,9 +1,13 @@
 #pragma once
 
-#include <mbgl/util/color.hpp>
-#include <mbgl/util/variant.hpp>
-#include <mbgl/util/feature.hpp>
+#include <array>
 #include <mbgl/style/expression/type.hpp>
+#include <mbgl/style/position.hpp>
+#include <mbgl/style/types.hpp>
+#include <mbgl/util/color.hpp>
+#include <mbgl/util/enum.hpp>
+#include <mbgl/util/feature.hpp>
+#include <mbgl/util/variant.hpp>
 
 
 namespace mbgl {
@@ -11,6 +15,7 @@ namespace style {
 namespace expression {
 
 struct Value;
+
 using ValueBase = variant<
     NullValue,
     bool,
@@ -24,9 +29,24 @@ struct Value : ValueBase {
     using ValueBase::ValueBase;
 };
 
+Value toExpressionValue(const Value&);
+
+template <typename T, typename Enable = std::enable_if_t< !std::is_convertible<T, Value>::value >>
+Value toExpressionValue(const T& value);
+
+template <typename T>
+std::enable_if_t< !std::is_convertible<T, Value>::value,
+optional<T>> fromExpressionValue(const Value& v);
+
+template <typename T>
+std::enable_if_t< std::is_convertible<T, Value>::value,
+optional<T>> fromExpressionValue(const Value& v)
+{
+    return v.template is<T>() ? v.template get<T>() : optional<T>();
+}
+
 constexpr NullValue Null = NullValue();
 
-Value convertValue(const mbgl::Value&);
 type::Type typeOf(const Value& value);
 std::string stringify(const Value& value);
 
@@ -37,6 +57,7 @@ std::string stringify(const Value& value);
 */
 template <typename T>
 type::Type valueTypeToExpressionType();
+
 
 } // namespace expression
 } // namespace style

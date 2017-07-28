@@ -28,8 +28,8 @@ public:
 
 
 EvaluationResult TypedExpression::evaluate(float z, const Feature& feature) const {
-    std::unique_ptr<const GeometryTileFeature> f = std::make_unique<const GeoJSONFeature>(feature);
-    return this->evaluate(EvaluationParameters {z, *f});
+    GeoJSONFeature f(feature);
+    return this->evaluate(EvaluationParameters {z, &f});
 }
 
 } // namespace expression

@@ -1,13 +1,16 @@
 #pragma once
 
 #include <memory>
-#include <mbgl/style/expression/parsing_context.hpp>
-#include <mbgl/style/expression/expression.hpp>
-#include <mbgl/style/expression/compound_expression.hpp>
-#include <mbgl/style/expression/match.hpp>
-#include <mbgl/style/expression/curve.hpp>
-#include <mbgl/style/expression/coalesce.hpp>
 #include <mbgl/style/conversion.hpp>
+#include <mbgl/style/expression/array_assertion.hpp>
+#include <mbgl/style/expression/case.hpp>
+#include <mbgl/style/expression/coalesce.hpp>
+#include <mbgl/style/expression/compound_expression.hpp>
+#include <mbgl/style/expression/curve.hpp>
+#include <mbgl/style/expression/expression.hpp>
+#include <mbgl/style/expression/literal.hpp>
+#include <mbgl/style/expression/match.hpp>
+#include <mbgl/style/expression/parsing_context.hpp>
 
 namespace mbgl {
 namespace style {
@@ -24,7 +27,7 @@ std::string getJSType(const V& value) {
     if (isArray(value) || isObject(value)) {
         return "object";
     }
-    optional<mbgl::Value> v = toValue(value);
+    optional<mbgl::Value> v = conversion::toValue(value);
     assert(v);
     return v->match(
         [&] (std::string) { return "string"; },
@@ -74,6 +77,10 @@ ParseResult parseExpression(const V& value, const ParsingContext& context)
             return UntypedCurve::parse(value, context);
         } else if (*op == "coalesce") {
             return UntypedCoalesce::parse(value, context);
+        } else if (*op == "case") {
+            return UntypedCase::parse(value, context);
+        } else if (*op == "array") {
+            return UntypedArrayAssertion::parse(value, context);
         }
         
         return UntypedCompoundExpression::parse(value, context);

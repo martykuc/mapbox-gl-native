@@ -390,18 +390,21 @@ set(MBGL_CORE_FILES
     src/mbgl/style/conversion/stringify.hpp
 
     # style/expression
+    include/mbgl/style/expression/array_assertion.hpp
     include/mbgl/style/expression/case.hpp
     include/mbgl/style/expression/coalesce.hpp
     include/mbgl/style/expression/compound_expression.hpp
     include/mbgl/style/expression/curve.hpp
     include/mbgl/style/expression/expression.hpp
     include/mbgl/style/expression/let.hpp
+    include/mbgl/style/expression/literal.hpp
     include/mbgl/style/expression/match.hpp
     include/mbgl/style/expression/parse.hpp
     include/mbgl/style/expression/parsing_context.hpp
     include/mbgl/style/expression/type.hpp
     include/mbgl/style/expression/value.hpp
     src/mbgl/style/expression/compound_expression.cpp
+    src/mbgl/style/expression/match.cpp
     src/mbgl/style/expression/type.cpp
     src/mbgl/style/expression/value.cpp
 
@@ -412,6 +415,7 @@ set(MBGL_CORE_FILES
     include/mbgl/style/function/composite_exponential_stops.hpp
     include/mbgl/style/function/composite_function.hpp
     include/mbgl/style/function/composite_interval_stops.hpp
+    include/mbgl/style/function/convert.hpp
     include/mbgl/style/function/exponential_stops.hpp
     include/mbgl/style/function/identity_stops.hpp
     include/mbgl/style/function/interval_stops.hpp

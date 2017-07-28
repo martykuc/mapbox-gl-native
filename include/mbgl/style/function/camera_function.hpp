@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mbgl/style/function/convert.hpp>
 #include <mbgl/style/function/exponential_stops.hpp>
 #include <mbgl/style/function/interval_stops.hpp>
 #include <mbgl/util/interpolate.hpp>
@@ -20,13 +21,16 @@ public:
             IntervalStops<T>>>;
 
     CameraFunction(Stops stops_)
-        : stops(std::move(stops_)) {
-    }
+        : stops(std::move(stops_)),
+          expression(stops.match([&] (const auto& s) {
+            return expression::Convert::toExpression(s);
+          }))
+    {}
 
     T evaluate(float zoom) const {
-        return stops.match([&] (const auto& s) {
-            return s.evaluate(zoom).value_or(T());
-        });
+        auto result = expression->evaluate<T>(expression::EvaluationParameters { zoom });
+        if (!result) return T();
+        return *result;
     }
     
     friend bool operator==(const CameraFunction& lhs,
@@ -34,8 +38,13 @@ public:
         return lhs.stops == rhs.stops;
     }
 
-    Stops stops;
     bool useIntegerZoom = false;
+    
+    // retained for compatibility with pre-expression function API
+    Stops stops;
+
+private:
+    std::shared_ptr<expression::TypedExpression> expression;
 };
 
 } // namespace style

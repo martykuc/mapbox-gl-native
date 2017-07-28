@@ -24,8 +24,8 @@ struct EvaluationError {
 };
 
 struct EvaluationParameters {
-    float zoom;
-    const GeometryTileFeature& feature;
+    optional<float> zoom;
+    GeometryTileFeature const * feature = nullptr;
 };
 
 template<typename T>
@@ -90,22 +90,22 @@ public:
     virtual EvaluationResult evaluate(const EvaluationParameters& params) const = 0;
     
     /*
-      Evaluate this expression to a particular value type T. (See expression/value.hpp for
-      possible types T.)
+      Evaluate this expression to a particular type T. 
+      (See expression/value.xpp for possible types T.)
     */
     template <typename T>
     Result<T> evaluate(const EvaluationParameters& params) {
         const auto& result = evaluate(params);
         if (!result) { return result.error(); }
-        return result->match(
-            [&] (const T& v) -> variant<EvaluationError, T> { return v; },
-            [&] (const auto& v) -> variant<EvaluationError, T> {
-                return EvaluationError {
-                    "Expected value to be of type " + toString(valueTypeToExpressionType<T>()) +
-                    ", but found " + toString(typeOf(v)) + " instead."
-                };
-            }
-        );
+        optional<T> converted = fromExpressionValue<T>(*result);
+        if (converted) {
+            return *converted;
+        } else {
+            return EvaluationError {
+                "Expected value to be of type " + toString(valueTypeToExpressionType<T>()) +
+                ", but found " + toString(typeOf(*result)) + " instead."
+            };
+        }
     }
     
     EvaluationResult evaluate(float z, const Feature& feature) const;
@@ -133,59 +133,6 @@ using ParseResult = variant<CompileError, std::unique_ptr<UntypedExpression>>;
 template <class V>
 ParseResult parseExpression(const V& value, const ParsingContext& context);
 
-class TypedLiteral : public TypedExpression {
-public:
-    TypedLiteral(Value value_) : TypedExpression(typeOf(value_)), value(value_) {}
-    EvaluationResult evaluate(const EvaluationParameters&) const override {
-        return value;
-    }
-private:
-    Value value;
-};
-
-class UntypedLiteral : public UntypedExpression {
-public:
-    UntypedLiteral(std::string key_, Value value_) : UntypedExpression(key_), value(value_) {}
-
-    TypecheckResult typecheck(std::vector<CompileError>&) const override {
-        return {std::make_unique<TypedLiteral>(value)};
-    }
-
-    template <class V>
-    static ParseResult parse(const V& value, const ParsingContext& ctx) {
-        const Value& parsedValue = parseValue(value);
-        return std::make_unique<UntypedLiteral>(ctx.key(), parsedValue);
-    }
-
-private:
-    template <class V>
-    static Value parseValue(const V& value) {
-        using namespace mbgl::style::conversion;
-        if (isUndefined(value)) return Null;
-        if (isObject(value)) {
-            std::unordered_map<std::string, Value> result;
-            eachMember(value, [&] (const std::string& k, const V& v) -> optional<conversion::Error> {
-                result.emplace(k, parseValue(v));
-                return {};
-            });
-            return result;
-        }
-        if (isArray(value)) {
-            std::vector<Value> result;
-            const auto length = arrayLength(value);
-            for(std::size_t i = 0; i < length; i++) {
-                result.emplace_back(parseValue(arrayMember(value, i)));
-            }
-            return result;
-        }
-        
-        optional<mbgl::Value> v = toValue(value);
-        assert(v);
-        return convertValue(*v);
-    }
-    
-    Value value;
-};
 
 } // namespace expression
 } // namespace style

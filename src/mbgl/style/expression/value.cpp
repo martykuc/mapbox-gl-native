@@ -4,38 +4,6 @@ namespace mbgl {
 namespace style {
 namespace expression {
 
-struct ConvertValue {
-//    null_value_t, bool, uint64_t, int64_t, double, std::string,
-//                                         mapbox::util::recursive_wrapper<std::vector<value>>,
-//                                         mapbox::util::recursive_wrapper<std::unordered_map<std::string, value>>
-    Value operator()(const std::vector<mbgl::Value>& v) {
-        std::vector<Value> result;
-        for(const auto& item : v) {
-            result.emplace_back(convertValue(item));
-        }
-        return result;
-    }
-    
-    Value operator()(const std::unordered_map<std::string, mbgl::Value>& v) {
-        std::unordered_map<std::string, Value> result;
-        for(const auto& entry : v) {
-            result.emplace(entry.first, convertValue(entry.second));
-        }
-        return result;
-    }
-    
-    Value operator()(const std::string& s) { return s; }
-    Value operator()(const bool& b) { return b; }
-    Value operator()(const mbgl::NullValue) { return Null; }
-    
-    template <typename T>
-    Value operator()(const T& v) { return *numericValue<float>(v); }
-};
-
-Value convertValue(const mbgl::Value& value) {
-    return mbgl::Value::visit(value, ConvertValue());
-}
-
 type::Type typeOf(const Value& value) {
     return value.match(
         [&](bool) -> type::Type { return type::Boolean; },
@@ -92,6 +60,165 @@ std::string stringify(const Value& value) {
     );
 }
 
+
+template <class T, class Enable = void>
+struct Converter {
+    static Value toExpressionValue(const T& value) {
+        return Value(value);
+    }
+    static optional<T> fromExpressionValue(const Value& value) {
+        return value.template is<T>() ? value.template get<T>() : optional<T>();
+    }
+};
+
+template<>
+struct Converter<mbgl::Value> {
+    static Value toExpressionValue(const mbgl::Value& value) {
+        return mbgl::Value::visit(value, Converter<mbgl::Value>());
+    }
+
+
+    // Double duty as a variant visitor for mbgl::Value:
+    Value operator()(const std::vector<mbgl::Value>& v) {
+        std::vector<Value> result;
+        for(const auto& item : v) {
+            result.emplace_back(toExpressionValue(item));
+        }
+        return result;
+    }
+    
+    Value operator()(const std::unordered_map<std::string, mbgl::Value>& v) {
+        std::unordered_map<std::string, Value> result;
+        for(const auto& entry : v) {
+            result.emplace(entry.first, toExpressionValue(entry.second));
+        }
+        return result;
+    }
+    
+    Value operator()(const std::string& s) { return s; }
+    Value operator()(const bool& b) { return b; }
+    Value operator()(const mbgl::NullValue) { return Null; }
+    
+    template <typename T>
+    Value operator()(const T& v) { return *numericValue<float>(v); }
+};
+
+template <typename T, std::size_t N>
+struct Converter<std::array<T, N>> {
+    static Value toExpressionValue(const std::array<T, N>& value) {
+        std::vector<Value> result;
+        std::copy_n(value.begin(), N, result.begin());
+        return result;
+    }
+    
+    static optional<std::array<T, N>> fromExpressionValue(const Value& v) {
+        return v.match(
+            [&] (const std::vector<Value>& v) -> optional<std::array<T, N>> {
+                if (v.size() != N) return optional<std::array<T, N>>();
+                std::array<T, N> result;
+                auto it = result.begin();
+                for(const auto& item : v) {
+                    if (!item.template is<T>()) {
+                        return optional<std::array<T, N>>();
+                    }
+                    *it = item.template get<T>();
+                    it = std::next(it);
+                }
+                return result;
+            },
+            [&] (const auto&) { return optional<std::array<T, N>>(); }
+        );
+    }
+    
+    static type::Type expressionType() {
+        return type::Array(valueTypeToExpressionType<T>(), N);
+    }
+};
+
+template <typename T>
+struct Converter<std::vector<T>> {
+    static Value toExpressionValue(const std::vector<T>& value) {
+        std::vector<Value> v;
+        std::copy(value.begin(), value.end(), v.begin());
+        return v;
+    }
+    
+    static optional<std::vector<T>> fromExpressionValue(const Value& v) {
+        return v.match(
+            [&] (const std::vector<Value>& v) -> optional<std::vector<T>> {
+                std::vector<T> result;
+                for(const auto& item : v) {
+                    if (!item.template is<T>()) {
+                        return optional<std::vector<T>>();
+                    }
+                    result.push_back(item.template get<T>());
+                }
+                return result;
+            },
+            [&] (const auto&) { return optional<std::vector<T>>(); }
+        );
+    }
+    
+    static type::Type expressionType() {
+        return type::Array(valueTypeToExpressionType<T>());
+    }
+};
+
+template <>
+struct Converter<Position> {
+    static Value toExpressionValue(const mbgl::style::Position& value) {
+        return Converter<std::array<float, 3>>::toExpressionValue(value.getSpherical());
+    }
+    
+    static optional<Position> fromExpressionValue(const Value& v) {
+        auto pos = Converter<std::array<float, 3>>::fromExpressionValue(v);
+        return pos ? optional<Position>(Position(*pos)) : optional<Position>();
+    }
+    
+    static type::Type expressionType() {
+        return type::Array(type::Number, 3);
+    }
+};
+
+template <typename T>
+struct Converter<T, std::enable_if_t< std::is_enum<T>::value >> {
+    static Value toExpressionValue(const T& value) {
+        return std::string(Enum<T>::toString(value));
+    }
+    
+    static optional<T> fromExpressionValue(const Value& v) {
+        return v.match(
+            [&] (const std::string& v) { return Enum<T>::toEnum(v); },
+            [&] (const auto&) { return optional<T>(); }
+        );
+    }
+    
+    static type::Type expressionType() {
+        return type::String;
+    }
+};
+
+Value toExpressionValue(const Value& v) {
+    return v;
+}
+
+template <typename T, typename Enable>
+Value toExpressionValue(const T& value) {
+    return Converter<T>::toExpressionValue(value);
+}
+
+template <typename T>
+std::enable_if_t< !std::is_convertible<T, Value>::value,
+optional<T>> fromExpressionValue(const Value& v)
+{
+    return Converter<T>::fromExpressionValue(v);
+}
+
+template <typename T>
+type::Type valueTypeToExpressionType() {
+    return Converter<T>::expressionType();
+}
+
 template <> type::Type valueTypeToExpressionType<Value>() { return type::Value; }
 template <> type::Type valueTypeToExpressionType<NullValue>() { return type::Null; }
 template <> type::Type valueTypeToExpressionType<bool>() { return type::Boolean; }
@@ -99,9 +226,36 @@ template <> type::Type valueTypeToExpressionType<float>() { return type::Number;
 template <> type::Type valueTypeToExpressionType<std::string>() { return type::String; }
 template <> type::Type valueTypeToExpressionType<mbgl::Color>() { return type::Color; }
 template <> type::Type valueTypeToExpressionType<std::unordered_map<std::string, Value>>() { return type::Object; }
-template <> type::Type valueTypeToExpressionType<std::array<float, 2>>() { return type::Array(type::Number, 2); }
-template <> type::Type valueTypeToExpressionType<std::array<float, 4>>() { return type::Array(type::Number, 4); }
 template <> type::Type valueTypeToExpressionType<std::vector<Value>>() { return type::Array(type::Value); }
+
+
+template Value toExpressionValue(const mbgl::Value&);
+
+// instantiate templates fromExpressionValue<T>, toExpressionValue<T>, and valueTypeToExpressionType<T>
+template <typename T>
+struct instantiate {
+    void noop(const T& t) {
+        fromExpressionValue<T>(toExpressionValue(t));
+        valueTypeToExpressionType<T>();
+    }
+};
+
+template struct instantiate<std::array<float, 2>>;
+template struct instantiate<std::array<float, 4>>;
+template struct instantiate<std::vector<float>>;
+template struct instantiate<std::vector<std::string>>;
+template struct instantiate<AlignmentType>;
+template struct instantiate<CirclePitchScaleType>;
+template struct instantiate<IconTextFitType>;
+template struct instantiate<LineCapType>;
+template struct instantiate<LineJoinType>;
+template struct instantiate<SymbolPlacementType>;
+template struct instantiate<TextAnchorType>;
+template struct instantiate<TextJustifyType>;
+template struct instantiate<TextTransformType>;
+template struct instantiate<TranslateAnchorType>;
+template struct instantiate<LightAnchorType>;
+template struct instantiate<Position>;
 
 } // namespace expression
 } // namespace style

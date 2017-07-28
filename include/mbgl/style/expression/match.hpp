@@ -55,7 +55,7 @@ public:
     }
     
     EvaluationResult evaluate(const EvaluationParameters& params) const override {
-        const auto& inputValue = input->evaluate<T>(params);
+        const auto& inputValue = evaluateInput(params);
         if (!inputValue) {
             return inputValue.error();
         }
@@ -66,22 +66,12 @@ public:
     }
 
 private:
+    Result<T> evaluateInput(const EvaluationParameters& params) const;
+
     std::unique_ptr<TypedExpression> input;
     std::unordered_map<T, std::shared_ptr<TypedExpression>> cases;
     std::unique_ptr<TypedExpression> otherwise;
 };
-
-template <> EvaluationResult TypedMatch<int64_t>::evaluate(const EvaluationParameters& params) const {
-    const auto& inputValue = input->evaluate<float>(params);
-    if (!inputValue) {
-        return inputValue.error();
-    }
-    int64_t rounded = ceilf(*inputValue);
-    if (*inputValue != rounded || cases.find(rounded) == cases.end()) {
-        return otherwise->evaluate(params);
-    }
-    return cases.at(rounded)->evaluate(params);
-}
 
 class UntypedMatch : public UntypedExpression {
 public:
