@@ -22,6 +22,8 @@ public:
     EvaluationResult evaluate(const EvaluationParameters&) const override {
         return value;
     }
+    bool isFeatureConstant() const override { return true; }
+    bool isZoomConstant() const override { return true; }
 private:
     Value value;
 };

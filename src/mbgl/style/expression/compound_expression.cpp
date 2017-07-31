@@ -35,6 +35,7 @@ std::unique_ptr<TypedExpression> Signature<R (Params...)>::makeTypedExpression(s
 
 using Definition = CompoundExpression::Definition;
 
+// Helper for creating expression Definigion from one or more lambdas
 template <typename ...Evals, typename std::enable_if_t<sizeof...(Evals) != 0, int> = 0>
 static std::pair<std::string, Definition> define(std::string name, Evals... evalFunctions) {
     Definition definition;
@@ -47,6 +48,8 @@ static std::pair<std::string, Definition> define(std::string name, Evals... eval
     return std::pair<std::string, Definition>(name, std::move(definition));
 }
 
+
+// Helper for defining feature-dependent expression
 template <typename ...Evals, typename std::enable_if_t<sizeof...(Evals) != 0, int> = 0>
 static std::pair<std::string, Definition> defineFeatureFunction(std::string name, Evals... evalFunctions) {
     Definition definition;
@@ -59,11 +62,32 @@ static std::pair<std::string, Definition> defineFeatureFunction(std::string name
     return std::pair<std::string, Definition>(name, std::move(definition));
 }
 
-template <typename ...Entries>
-std::unordered_map<std::string, CompoundExpression::Definition> initializeDefinitions(Entries... entries) {
-    std::unordered_map<std::string, CompoundExpression::Definition> definitions;
-    expand_pack(definitions.insert(std::move(entries)));
-    return definitions;
+// Special case defineHas() and defineGet() functions because their overloads
+// have differing values for isFeatureConstant.
+static Definition defineHas() {
+    Definition definition;
+    definition.push_back(
+        std::make_unique<Signature<Result<bool> (const EvaluationParameters&, const std::string&)>>(
+            [](const EvaluationParameters& params, const std::string& key) -> Result<bool> {
+                if (!params.feature) {
+                    return EvaluationError {
+                        "Feature data is unavailable in the current evaluation context."
+                    };
+                }
+                
+                return params.feature->getValue(key) ? true : false;
+            },
+            false
+        )
+    );
+    definition.push_back(
+        std::make_unique<Signature<Result<bool> (const std::string&, const std::unordered_map<std::string, Value>&)>>(
+            [](const std::string& key, const std::unordered_map<std::string, Value>& object) -> Result<bool> {
+                return object.find(key) != object.end();
+            }
+        )
+    );
+    return definition;
 }
 
 static Definition defineGet() {
@@ -71,10 +95,13 @@ static Definition defineGet() {
     definition.push_back(
         std::make_unique<Signature<Result<Value> (const EvaluationParameters&, const std::string&)>>(
             [](const EvaluationParameters& params, const std::string& key) -> Result<Value> {
-                optional<mbgl::Value> propertyValue;
-                if (params.feature) {
-                    propertyValue = params.feature->getValue(key);
+                if (!params.feature) {
+                    return EvaluationError {
+                        "Feature data is unavailable in the current evaluation context."
+                    };
                 }
+
+                auto propertyValue = params.feature->getValue(key);
                 if (!propertyValue) {
                     return EvaluationError {
                         "Property '" + key + "' not found in feature.properties"
@@ -100,6 +127,21 @@ static Definition defineGet() {
     return definition;
 }
 
+// Define "zoom" expression, it being the only one for which isZoomConstant == false.
+static std::pair<std::string, Definition> defineZoom() {
+    auto zoom = [](const EvaluationParameters& params) -> Result<float> {
+        if (!params.zoom) {
+            return EvaluationError {
+                "The 'zoom' expression is unavailable in the current evaluation context."
+            };
+        }
+        return *(params.zoom);
+    };
+    Definition definition;
+    definition.push_back(std::make_unique<Signature<decltype(zoom)>>(zoom, true, false));
+    return std::pair<std::string, Definition>("zoom", std::move(definition));
+}
+
 template <typename T>
 Result<T> assertion(const Value& v) {
     if (!v.is<T>()) {
@@ -111,10 +153,43 @@ Result<T> assertion(const Value& v) {
     return v.get<T>();
 }
 
+std::string stringifyColor(float r, float g, float b, float a) {
+    return stringify(r) + ", " +
+        stringify(g) + ", " +
+        stringify(b) + ", " +
+        stringify(a);
+}
+Result<mbgl::Color> rgba(float r, float g, float b, float a) {
+    if (
+        r < 0 || r > 255 ||
+        g < 0 || g > 255 ||
+        b < 0 || b > 255
+    ) {
+        return EvaluationError {
+            "Invalid rgba value [" + stringifyColor(r, g, b, a)  +
+            "]: 'r', 'g', and 'b' must be between 0 and 255."
+        };
+    }
+    if (a < 0 || a > 1) {
+        return EvaluationError {
+            "Invalid rgba value [" + stringifyColor(r, g, b, a)  +
+            "]: 'a' must be between 0 and 1."
+        };
+    }
+    return mbgl::Color(r / 255, g / 255, b / 255, a);
+}
+
+template <typename ...Entries>
+std::unordered_map<std::string, CompoundExpression::Definition> initializeDefinitions(Entries... entries) {
+    std::unordered_map<std::string, CompoundExpression::Definition> definitions;
+    expand_pack(definitions.insert(std::move(entries)));
+    return definitions;
+}
+
 std::unordered_map<std::string, CompoundExpression::Definition> CompoundExpression::definitions = initializeDefinitions(
-    define("e", []() -> Result<float> { return 2.7f; }),
-    define("pi", []() -> Result<float> { return 3.141f; }),
-    define("ln2", []() -> Result<float> { return 0.693f; }),
+    define("e", []() -> Result<float> { return 2.718281828459045f; }),
+    define("pi", []() -> Result<float> { return 3.141592653589793f; }),
+    define("ln2", []() -> Result<float> { return 0.6931471805599453; }),
     
     define("typeof", [](const Value& v) -> Result<std::string> { return toString(typeOf(v)); }),
     define("number", assertion<float>),
@@ -162,16 +237,72 @@ std::unordered_map<std::string, CompoundExpression::Definition> CompoundExpressi
         };
     }),
     
-    define("zoom", [](const EvaluationParameters& params) -> Result<float> {
-        if (!params.zoom) {
-            return EvaluationError {
-                "The 'zoom' expression is unavailable in the current evaluation context."
-            };
-        }
-        return *(params.zoom);
+    define("rgba", rgba),
+    define("rgb", [](float r, float g, float b) { return rgba(r, g, b, 1.0f); }),
+    
+    defineZoom(),
+    
+    std::pair<std::string, Definition>("has", defineHas()),
+    std::pair<std::string, Definition>("get", defineGet()),
+    
+    define("length", [](const std::vector<Value>& arr) -> Result<float> {
+        return arr.size();
+    }, [] (const std::string s) -> Result<float> {
+        return s.size();
     }),
     
-    std::pair<std::string, Definition>("get", defineGet()),
+    defineFeatureFunction("properties", [](const EvaluationParameters& params) -> Result<std::unordered_map<std::string, Value>> {
+        if (!params.feature) {
+            return EvaluationError {
+                "Feature data is unavailable in the current evaluation context."
+            };
+        }
+        std::unordered_map<std::string, Value> result;
+        const auto& properties = params.feature->getProperties();
+        for (const auto& entry : properties) {
+            result[entry.first] = toExpressionValue(entry.second);
+        }
+        return result;
+    }),
+    
+    defineFeatureFunction("geometry_type", [](const EvaluationParameters& params) -> Result<std::string> {
+        if (!params.feature) {
+            return EvaluationError {
+                "Feature data is unavailable in the current evaluation context."
+            };
+        }
+    
+        auto type = params.feature->getType();
+        if (type == FeatureType::Point) {
+            return "Point";
+        } else if (type == FeatureType::LineString) {
+            return "LineString";
+        } else if (type == FeatureType::Polygon) {
+            return "Polygon";
+        } else {
+            return "Unknown";
+        }
+    }),
+    
+    defineFeatureFunction("id", [](const EvaluationParameters& params) -> Result<Value> {
+        if (!params.feature) {
+            return EvaluationError {
+                "Feature data is unavailable in the current evaluation context."
+            };
+        }
+    
+        auto id = params.feature->getID();
+        if (!id) {
+            return EvaluationError {
+                "Property 'id' not found in feature"
+            };
+        }
+        return id->match(
+            [](const auto& idValue) {
+                return toExpressionValue(mbgl::Value(idValue));
+            }
+        );
+    }),
     
     define("+", [](const Varargs<float>& args) -> Result<float> {
         float sum = 0.0f;
@@ -182,28 +313,6 @@ std::unordered_map<std::string, CompoundExpression::Definition> CompoundExpressi
     }),
     define("-", [](float a, float b) -> Result<float> { return a - b; })
 );
-
-//        if (*op == "to_string") return LambdaExpression::parse<ToString>(value, context);
-//        if (*op == "to_number") return LambdaExpression::parse<ToNumber>(value, context);
-//        if (*op == "to_boolean") return LambdaExpression::parse<ToBoolean>(value, context);
-//        if (*op == "to_rgba") return LambdaExpression::parse<ToRGBA>(value, context);
-//        if (*op == "parse_color") return LambdaExpression::parse<ParseColor>(value, context);
-//        if (*op == "rgba") return LambdaExpression::parse<RGBA>(value, context);
-//        if (*op == "rgb") return LambdaExpression::parse<RGB>(value, context);
-//        if (*op == "get") return LambdaExpression::parse<Get>(value, context);
-//        if (*op == "has") return LambdaExpression::parse<Has>(value, context);
-//        if (*op == "at") return LambdaExpression::parse<At>(value, context);
-//        if (*op == "length") return LambdaExpression::parse<Length>(value, context);
-//        if (*op == "properties") return LambdaExpression::parse<Properties>(value, context);
-//        if (*op == "id") return LambdaExpression::parse<Id>(value, context);
-//        if (*op == "geometry_type") return LambdaExpression::parse<GeometryType>(value, context);
-//        if (*op == "+") return LambdaExpression::parse<Plus>(value, context);
-//        if (*op == "-") return LambdaExpression::parse<Minus>(value, context);
-//        if (*op == "*") return LambdaExpression::parse<Times>(value, context);
-//        if (*op == "/") return LambdaExpression::parse<Divide>(value, context);
-//        if (*op == "^") return LambdaExpression::parse<Power>(value, context);
-//        if (*op == "%") return LambdaExpression::parse<Mod>(value, context);
-//        if (*op == "coalesce") return LambdaExpression::parse<Coalesce>(value, context);
 
 } // namespace expression
 } // namespace style

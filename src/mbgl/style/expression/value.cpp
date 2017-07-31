@@ -1,4 +1,5 @@
 #include  <mbgl/style/expression/value.hpp>
+#include <sstream>
 
 namespace mbgl {
 namespace style {
@@ -38,7 +39,11 @@ std::string stringify(const Value& value) {
     return value.match(
         [&] (const NullValue&) { return std::string("null"); },
         [&] (bool b) { return std::string(b ? "true" : "false"); },
-        [&] (float f) { return ceilf(f) == f ? std::to_string((int)f) : std::to_string(f); },
+        [&] (float f) {
+            std::stringstream ss;
+            ss << f;
+            return ss.str();
+        },
         [&] (const std::string& s) { return "\"" + s + "\""; },
         [&] (const mbgl::Color& c) { return c.stringify(); },
         [&] (const std::vector<Value>& arr) {

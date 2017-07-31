@@ -22,6 +22,14 @@ public:
         input(std::move(input_))
     {}
     
+    bool isFeatureConstant() const override {
+        return input->isFeatureConstant();
+    }
+    
+    bool isZoomConstant() const override {
+        return input->isZoomConstant();
+    }
+    
     EvaluationResult evaluate(const EvaluationParameters& params) const override {
         auto result = input->evaluate(params);
         if (!result) {

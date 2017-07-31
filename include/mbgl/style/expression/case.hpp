@@ -32,7 +32,7 @@ public:
     bool isZoomConstant() const override {
         if (!otherwise->isZoomConstant()) { return false; }
         for (const auto& pair : cases) {
-            if (!pair.first->isFeatureConstant() || !pair.second->isZoomConstant()) {
+            if (!pair.first->isZoomConstant() || !pair.second->isZoomConstant()) {
                 return false;
             }
         }

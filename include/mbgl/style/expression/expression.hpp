@@ -84,8 +84,8 @@ public:
     TypedExpression(type::Type type_) : type(type_) {}
     virtual ~TypedExpression() {};
     
-    virtual bool isFeatureConstant() const { return true; }
-    virtual bool isZoomConstant() const { return true; }
+    virtual bool isFeatureConstant() const = 0;
+    virtual bool isZoomConstant() const = 0;
     
     virtual EvaluationResult evaluate(const EvaluationParameters& params) const = 0;
     
