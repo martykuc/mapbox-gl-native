@@ -29,32 +29,59 @@ void NodeExpression::Init(v8::Local<v8::Object> target) {
     Nan::Set(target, Nan::New("Expression").ToLocalChecked(), tpl->GetFunction());
 }
 
+type::Type parseType(v8::Local<v8::Object> type) {
+    static std::unordered_map<std::string, type::Type> types = {
+        {"String", type::String},
+        {"Number", type::Number},
+        {"Boolean", type::Boolean},
+        {"Object", type::Object},
+        {"Color", type::Color},
+        {"Value", type::Value}
+    };
+    
+    v8::Local<v8::Value> v8kind = Nan::Get(type, Nan::New("kind").ToLocalChecked()).ToLocalChecked();
+    std::string kind(*v8::String::Utf8Value(v8kind));
+    
+    if (kind == "Array") {
+        type::Type itemType = parseType(Nan::Get(type, Nan::New("itemType").ToLocalChecked()).ToLocalChecked()->ToObject());
+        mbgl::optional<std::size_t> N;
+        
+        v8::Local<v8::String> Nkey = Nan::New("N").ToLocalChecked();
+        if (Nan::Has(type, Nkey).FromMaybe(false)) {
+            N = Nan::Get(type, Nkey).ToLocalChecked()->ToInt32()->Value();
+        }
+        return type::Array(itemType, N);
+    }
+    
+    return types.at(kind);
+}
+
 void NodeExpression::Parse(const Nan::FunctionCallbackInfo<v8::Value>& info) {
     v8::Local<v8::Function> cons = Nan::New(constructor);
     
     if (info.Length() < 1 || info[0]->IsUndefined()) {
         return Nan::ThrowTypeError("Requires a JSON style expression argument.");
     }
+    
+    mbgl::optional<type::Type> expected;
+    if (info.Length() > 1 && info[1]->IsObject()) {
+        expected = parseType(info[1]->ToObject());
+    }
 
     auto expr = info[0];
 
     try {
-        std::vector<CompileError> errors;
-        auto parsed = parseExpression(expr, ParsingContext());
-        if (parsed.template is<std::unique_ptr<UntypedExpression>>()) {
-            const auto& e = parsed.template get<std::unique_ptr<UntypedExpression>>();
-            auto checked = e->typecheck(errors);
-            if (checked) {
-                auto nodeExpr = new NodeExpression(std::move(*checked));
-                const int argc = 0;
-                v8::Local<v8::Value> argv[0] = {};
-                auto wrapped = Nan::NewInstance(cons, argc, argv).ToLocalChecked();
-                nodeExpr->Wrap(wrapped);
-                info.GetReturnValue().Set(wrapped);
-                return;
-            }
-        } else {
-            errors.emplace_back(parsed.template get<CompileError>());
+        std::vector<ParsingError> errors;
+        ParseResult parsed = parseExpression(expr, ParsingContext(errors, expected));
+        if (parsed) {
+            assert(errors.size() == 0);
+            auto nodeExpr = new NodeExpression(std::move(*parsed));
+            const int argc = 0;
+            v8::Local<v8::Value> argv[0] = {};
+            auto wrapped = Nan::NewInstance(cons, argc, argv).ToLocalChecked();
+            nodeExpr->Wrap(wrapped);
+            info.GetReturnValue().Set(wrapped);
+            return;
         }
         
         v8::Local<v8::Array> result = Nan::New<v8::Array>();

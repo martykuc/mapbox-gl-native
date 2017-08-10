@@ -143,7 +143,7 @@ struct Converter<std::array<T, N>> {
 template <typename T>
 struct Converter<std::vector<T>> {
     static Value toExpressionValue(const std::vector<T>& value) {
-        std::vector<Value> v;
+        std::vector<Value> v(value.size());
         std::copy(value.begin(), value.end(), v.begin());
         return v;
     }

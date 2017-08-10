@@ -4,6 +4,7 @@
 #include <memory>
 #include <mbgl/util/optional.hpp>
 #include <mbgl/util/variant.hpp>
+#include <mbgl/style/expression/check_subtype.hpp>
 #include <mbgl/style/expression/expression.hpp>
 #include <mbgl/style/expression/type.hpp>
 #include <mbgl/style/expression/parsing_context.hpp>
@@ -15,10 +16,10 @@ namespace style {
 namespace expression {
 
 
-class TypedArrayAssertion : public TypedExpression  {
+class ArrayAssertion : public Expression  {
 public:
-    TypedArrayAssertion(type::Array type, std::unique_ptr<TypedExpression> input_) :
-        TypedExpression(type),
+    ArrayAssertion(type::Array type, std::unique_ptr<Expression> input_) :
+        Expression(type),
         input(std::move(input_))
     {}
     
@@ -35,40 +36,19 @@ public:
         if (!result) {
             return result.error();
         }
-        auto error = matchType(getType(), typeOf(*result));
-        if (error) {
-            return EvaluationError { *error };
+        type::Type expected = getType();
+        type::Type actual = typeOf(*result);
+        if (checkSubtype(expected, actual)) {
+            return EvaluationError {
+                "Expected value to be of type " + toString(expected) +
+                ", but found " + toString(actual) + " instead."
+            };
         }
         return *result;
     }
-private:
-    std::unique_ptr<TypedExpression> input;
-};
-
-class UntypedArrayAssertion : public UntypedExpression {
-public:
-    UntypedArrayAssertion(std::string key_,
-                          type::Type itemType_,
-                          optional<std::size_t> length_,
-                          std::unique_ptr<UntypedExpression> input_
-    ) : UntypedExpression(key_),
-        itemType(itemType_),
-        length(length_),
-        input(std::move(input_))
-    {}
-
-    TypecheckResult typecheck(std::vector<CompileError>& errors) const override {
-        auto checkedInput = input->typecheck(errors);
-        if (!checkedInput) {
-            return TypecheckResult();
-        }
-        return TypecheckResult(std::make_unique<TypedArrayAssertion>(
-            type::Array(itemType, length), std::move(*checkedInput))
-        );
-    }
     
     template <class V>
-    static ParseResult parse(const V& value, const ParsingContext& ctx) {
+    static ParseResult parse(const V& value, ParsingContext ctx) {
         using namespace mbgl::style::conversion;
         
         static std::unordered_map<std::string, type::Type> itemTypes {
@@ -79,56 +59,52 @@ public:
     
         auto length = arrayLength(value);
         if (length < 2 || length > 4) {
-            return CompileError {
-                "Expected 1, 2, or 3 arguments, but found " + std::to_string(length - 1) + " instead.",
-                ctx.key()
-            };
+            ctx.error("Expected 1, 2, or 3 arguments, but found " + std::to_string(length - 1) + " instead.");
+            return ParseResult();
         }
         
-        auto input = parseExpression(arrayMember(value, length - 1), ParsingContext(ctx, {length - 1}, {"array"}));
-        if (input.template is<CompileError>()) {
-            return input;
-        }
-
         optional<type::Type> itemType;
         optional<std::size_t> N;
         if (length > 2) {
-            auto type = toString(arrayMember(value, 2));
-            if (!type || itemTypes.find(*type) == itemTypes.end()) {
-                return CompileError {
+            optional<std::string> itemTypeName = toString(arrayMember(value, 1));
+            auto it = itemTypeName ? itemTypes.find(*itemTypeName) : itemTypes.end();
+            if (it == itemTypes.end()) {
+                ctx.error(
                     "The item type argument of \"array\" must be one of string, number, boolean",
-                    ctx.key(2)
-                };
+                    1
+                );
+                return ParseResult();
             }
-            itemType = itemTypes.at(*type);
+            itemType = it->second;
         } else {
             itemType = {type::Value};
         }
         
         if (length > 3) {
-            auto n = toNumber(arrayMember(value, 3));
+            auto n = toNumber(arrayMember(value, 2));
             if (!n || *n != ceilf(*n)) {
-                return CompileError {
+                ctx.error(
                     "The length argument to \"array\" must be a positive integer literal.",
-                    ctx.key(3)
-                };
+                    2
+                );
+                return ParseResult();
             }
             N = optional<std::size_t>(*n);
         }
-    
-        return std::make_unique<UntypedArrayAssertion>(
-            ctx.key(),
-            *itemType,
-            N,
-            std::move(input.template get<std::unique_ptr<UntypedExpression>>())
-        );
-    }
+        
+        auto input = parseExpression(arrayMember(value, length - 1), ParsingContext(ctx, length - 1, {type::Value}));
+        if (!input) {
+            return input;
+        }
 
-private:
     
-    type::Type itemType;
-    optional<std::size_t> length;
-    std::unique_ptr<UntypedExpression> input;
+        return ParseResult(std::make_unique<ArrayAssertion>(
+            type::Array(*itemType, N),
+            std::move(*input)
+        ));
+    }
+private:
+    std::unique_ptr<Expression> input;
 };
 
 } // namespace expression

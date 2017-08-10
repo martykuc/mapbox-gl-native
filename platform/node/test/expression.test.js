@@ -10,43 +10,43 @@ if (process.argv[1] === __filename && process.argv.length > 2) {
 }
 
 suite.run('native', {tests: tests}, (fixture) => {
-    const compileResult = {};
-    const testResult = {
-        compileResult
+    const compiled = {};
+    const result = {
+        compiled
     };
 
-    const expression = mbgl.Expression.parse(fixture.expression);
+    const expression = mbgl.Expression.parse(fixture.expression, fixture.expectExpressionType);
 
     if (expression instanceof mbgl.Expression) {
-        compileResult.result = 'success';
-        compileResult.isFeatureConstant = expression.isFeatureConstant();
-        compileResult.isZoomConstant = expression.isZoomConstant();
-        compileResult.type = expression.getType();
-        if (fixture.evaluate) {
-            const evaluateResults = [];
-            for (const input of fixture.evaluate) {
-                const zoom = typeof input[0].zoom === 'number' ?
-                    input[0].zoom : -1;
+        compiled.result = 'success';
+        compiled.isFeatureConstant = expression.isFeatureConstant();
+        compiled.isZoomConstant = expression.isZoomConstant();
+        compiled.type = expression.getType();
 
-                const feature = Object.assign({
-                    type: 'Feature',
-                    properties: {},
-                    geometry: { type: 'Point', coordinates: [0, 0] }
-                }, input[1])
+        const evaluate = fixture.inputs || [];
+        const evaluateResults = [];
+        for (const input of evaluate) {
+            const zoom = typeof input[0].zoom === 'number' ?
+                input[0].zoom : -1;
 
-                const output = expression.evaluate(zoom, feature);
-                evaluateResults.push(output);
-            }
+            const feature = Object.assign({
+                type: 'Feature',
+                properties: {},
+                geometry: { type: 'Point', coordinates: [0, 0] }
+            }, input[1])
 
-            if (evaluateResults.length) {
-                testResult.evaluateResults = evaluateResults;
-            }
+            const output = expression.evaluate(zoom, feature);
+            evaluateResults.push(output);
+        }
+
+        if (fixture.inputs) {
+            result.outputs = evaluateResults;
         }
     } else {
-        compileResult.result = 'error';
-        compileResult.errors = expression;
+        compiled.result = 'error';
+        compiled.errors = expression;
     }
 
-    return testResult;
+    return result;
 });
 

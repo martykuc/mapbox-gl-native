@@ -47,6 +47,22 @@ public:
     }
 };
 
+// Only safe if vectors are guaranteed at runtime to be the same length.
+template<>
+struct Interpolator<std::vector<float>> {
+    std::vector<float> operator()(const std::vector<float>& a,
+                                  const std::vector<float>& b,
+                                  const double t) const {
+        assert(a.size() == b.size());
+        if (a.size() == 0) return {};
+        std::vector<float> result;
+        for (std::size_t i = 0; i < a.size(); i++) {
+            result.push_back(interpolate(a[i], b[i], t));
+        }
+        return result;
+    }
+};
+
 template <>
 struct Interpolator<style::Position> {
 public:
@@ -100,6 +116,8 @@ struct Interpolatable
       !std::is_base_of<Uninterpolated, Interpolator<T>>::value,
       std::true_type,
       std::false_type> {};
+
+
 
 } // namespace util
 } // namespace mbgl

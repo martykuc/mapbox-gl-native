@@ -27,7 +27,7 @@ public:
 };
 
 
-EvaluationResult TypedExpression::evaluate(float z, const Feature& feature) const {
+EvaluationResult Expression::evaluate(float z, const Feature& feature) const {
     GeoJSONFeature f(feature);
     return this->evaluate(EvaluationParameters {z, &f});
 }

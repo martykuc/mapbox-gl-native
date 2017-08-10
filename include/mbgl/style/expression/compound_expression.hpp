@@ -6,6 +6,7 @@
 #include <mbgl/util/optional.hpp>
 #include <mbgl/util/variant.hpp>
 #include <mbgl/util/color.hpp>
+#include <mbgl/style/expression/check_subtype.hpp>
 #include <mbgl/style/expression/expression.hpp>
 #include <mbgl/style/expression/type.hpp>
 #include <mbgl/style/expression/value.hpp>
@@ -35,7 +36,7 @@ struct SignatureBase {
         params(params_)
     {}
     virtual ~SignatureBase() {}
-    virtual std::unique_ptr<TypedExpression> makeTypedExpression(std::vector<std::unique_ptr<TypedExpression>>) const = 0;
+    virtual std::unique_ptr<Expression> makeExpression(std::vector<std::unique_ptr<Expression>>) const = 0;
     type::Type result;
     variant<std::vector<type::Type>, VarargsType> params;
 };
@@ -48,7 +49,7 @@ struct Signature;
 // where T1, T2, etc. are the types of successfully-evaluated subexpressions.
 template <class R, class... Params>
 struct Signature<R (const EvaluationParameters&, Params...)> : SignatureBase {
-    using Args = std::array<std::unique_ptr<TypedExpression>, sizeof...(Params)>;
+    using Args = std::array<std::unique_ptr<Expression>, sizeof...(Params)>;
     
     Signature(R (*evaluate_)(const EvaluationParameters&, Params...),
               bool isFeatureConstant_ = true,
@@ -62,7 +63,7 @@ struct Signature<R (const EvaluationParameters&, Params...)> : SignatureBase {
         zoomConstant(isZoomConstant_)
     {}
     
-    std::unique_ptr<TypedExpression> makeTypedExpression(std::vector<std::unique_ptr<TypedExpression>> args) const override;
+    std::unique_ptr<Expression> makeExpression(std::vector<std::unique_ptr<Expression>> args) const override;
     
     bool isFeatureConstant() const { return featureConstant; }
     bool isZoomConstant() const { return zoomConstant; }
@@ -93,7 +94,7 @@ private:
 // an alias for vector<T>).
 template <class R, typename T>
 struct Signature<R (const Varargs<T>&)> : SignatureBase {
-    using Args = std::vector<std::unique_ptr<TypedExpression>>;
+    using Args = std::vector<std::unique_ptr<Expression>>;
     
     Signature(R (*evaluate_)(const Varargs<T>&)) :
         SignatureBase(
@@ -103,7 +104,7 @@ struct Signature<R (const Varargs<T>&)> : SignatureBase {
         evaluate(evaluate_)
     {}
     
-    std::unique_ptr<TypedExpression> makeTypedExpression(std::vector<std::unique_ptr<TypedExpression>> args) const override;
+    std::unique_ptr<Expression> makeExpression(std::vector<std::unique_ptr<Expression>> args) const override;
     
     bool isFeatureConstant() const { return true; }
     bool isZoomConstant() const { return true; }
@@ -126,7 +127,7 @@ struct Signature<R (const Varargs<T>&)> : SignatureBase {
 // where T1, T2, etc. are the types of successfully-evaluated subexpressions.
 template <class R, class... Params>
 struct Signature<R (Params...)> : SignatureBase {
-    using Args = std::array<std::unique_ptr<TypedExpression>, sizeof...(Params)>;
+    using Args = std::array<std::unique_ptr<Expression>, sizeof...(Params)>;
     
     Signature(R (*evaluate_)(Params...)) :
         SignatureBase(
@@ -142,7 +143,7 @@ struct Signature<R (Params...)> : SignatureBase {
         return applyImpl(evaluationParameters, args, std::index_sequence_for<Params...>{});
     }
     
-    std::unique_ptr<TypedExpression> makeTypedExpression(std::vector<std::unique_ptr<TypedExpression>> args) const override;
+    std::unique_ptr<Expression> makeExpression(std::vector<std::unique_ptr<Expression>> args) const override;
     
     R (*evaluate)(Params...);
 private:
@@ -179,18 +180,14 @@ struct Signature<Lambda, std::enable_if_t<std::is_class<Lambda>::value>>
     : Signature<decltype(&Lambda::operator())>
 { using Signature<decltype(&Lambda::operator())>::Signature; };
 
-
-struct CompoundExpression {
-    using Definition = std::vector<std::unique_ptr<SignatureBase>>;
-    static std::unordered_map<std::string, Definition> definitions;
-};
-
 template <typename Signature>
-class TypedCompoundExpression : public TypedExpression {
+class CompoundExpression : public Expression {
 public:
-    TypedCompoundExpression(Signature signature_,
-                            typename Signature::Args args_) :
-        TypedExpression(signature_.result),
+    using Args = typename Signature::Args;
+    
+    CompoundExpression(Signature signature_,
+                       typename Signature::Args args_) :
+        Expression(signature_.result),
         signature(signature_),
         args(std::move(args_))
     {}
@@ -225,109 +222,115 @@ private:
 };
 
 
-class UntypedCompoundExpression : public UntypedExpression {
-public:
-    using Args = std::vector<std::unique_ptr<UntypedExpression>>;
-    
-    UntypedCompoundExpression(std::string key, std::string name_, std::vector<std::unique_ptr<UntypedExpression>> args_) :
-        UntypedExpression(key),
-        name(name_),
-        args(std::move(args_))
-    {}
+struct CompoundExpressions {
+    using Definition = std::vector<std::unique_ptr<SignatureBase>>;
+    static std::unordered_map<std::string, Definition> definitions;
     
     template <class V>
-    static ParseResult parse(const V& value, const ParsingContext& ctx) {
+    static ParseResult parse(const V& value, ParsingContext ctx) {
         using namespace mbgl::style::conversion;
         assert(isArray(value) && arrayLength(value) > 0);
         const auto& name = toString(arrayMember(value, 0));
         assert(name);
         
-        if (CompoundExpression::definitions.find(*name) == CompoundExpression::definitions.end()) {
-            return CompileError {
+        auto it = definitions.find(*name);
+        if (it == definitions.end()) {
+            ctx.error(
                 std::string("Unknown expression \"") + *name + "\". If you wanted a literal array, use [\"literal\", [...]].",
-                ctx.key(0)
-            };
+                0
+            );
+            return ParseResult();
         }
-        
-        std::vector<std::unique_ptr<UntypedExpression>> args;
+        const Definition& definition = it->second;
+
+        // parse subexpressions first
+        std::vector<std::unique_ptr<Expression>> args;
         auto length = arrayLength(value);
         for (std::size_t i = 1; i < length; i++) {
-            auto parsed = parseExpression(arrayMember(value, i), ParsingContext(ctx, {i}, name));
-            if (parsed.template is<CompileError>()) {
+            auto parsed = parseExpression(arrayMember(value, i), ParsingContext(ctx, i));
+            if (!parsed) {
                 return parsed;
             }
-            args.push_back(std::move(parsed.template get<std::unique_ptr<UntypedExpression>>()));
+            args.push_back(std::move(*parsed));
         }
         
-        return std::make_unique<UntypedCompoundExpression>(ctx.key(), *name, std::move(args));
+        return create(definition, std::move(args), ctx);
     }
+    
+    static ParseResult create(const Definition& definition,
+                              std::vector<std::unique_ptr<Expression>> args,
+                              ParsingContext ctx)
+    {
+        std::vector<ParsingError> currentSignatureErrors;
 
-    TypecheckResult typecheck(std::vector<CompileError>& errors) const override {
-        const auto& definition = CompoundExpression::definitions.at(name);
+        ParsingContext signatureContext(currentSignatureErrors);
+        signatureContext.key = ctx.key;
         
-        std::vector<CompileError> currentSignatureErrors;
         for (const auto& signature : definition) {
             currentSignatureErrors.clear();
-            std::vector<std::unique_ptr<TypedExpression>> checkedArgs;
+            
+            
             if (signature->params.is<std::vector<type::Type>>()) {
                 const auto& params = signature->params.get<std::vector<type::Type>>();
                 if (params.size() != args.size()) {
-                    currentSignatureErrors.emplace_back(CompileError {
+                    signatureContext.error(
                         "Expected " + std::to_string(params.size()) +
-                        " arguments, but found " + std::to_string(args.size()) + " instead.",
-                        getKey()
-                    });
+                        " arguments, but found " + std::to_string(args.size()) + " instead."
+                    );
                     continue;
                 }
 
                 for (std::size_t i = 0; i < args.size(); i++) {
                     const auto& arg = args.at(i);
-                    auto checked = arg->typecheck(currentSignatureErrors);
-                    if (checked) {
-                        const auto& param = params.at(i);
-                        const auto& error = matchType(param, (*checked)->getType());
-                        if (error) {
-                            currentSignatureErrors.emplace_back(CompileError {
-                                *error,
-                                getKey()
-                            });
-                        } else {
-                            checkedArgs.push_back(std::move(*checked));
-                        }
-                    }
+                    checkSubtype(params.at(i), arg->getType(), ParsingContext(signatureContext, i + 1));
                 }
             } else if (signature->params.is<VarargsType>()) {
                 const auto& paramType = signature->params.get<VarargsType>().type;
                 for (std::size_t i = 0; i < args.size(); i++) {
                     const auto& arg = args.at(i);
-                    auto checked = arg->typecheck(currentSignatureErrors);
-                    if (checked) {
-                        const auto& error = matchType(paramType, (*checked)->getType());
-                        if (error) {
-                            currentSignatureErrors.emplace_back(CompileError {
-                                *error,
-                                getKey()
-                            });
-                        } else {
-                            checkedArgs.push_back(std::move(*checked));
-                        }
-                    }
+                    checkSubtype(paramType, arg->getType(), ParsingContext(signatureContext, i + 1));
                 }
             }
             
             if (currentSignatureErrors.size() == 0) {
-                return signature->makeTypedExpression(std::move(checkedArgs));
+                return ParseResult(signature->makeExpression(std::move(args)));
             }
         }
         
-        errors.insert(errors.end(), currentSignatureErrors.begin(), currentSignatureErrors.end());
-        return {};
+        if (definition.size() == 1) {
+            ctx.errors.insert(ctx.errors.end(), currentSignatureErrors.begin(), currentSignatureErrors.end());
+        } else {
+            std::string signatures;
+            for (const auto& signature : definition) {
+                signatures += (signatures.size() > 0 ? " | " : "");
+                signature->params.match(
+                    [&](const VarargsType& varargs) {
+                        signatures += "(" + toString(varargs.type) + ")";
+                    },
+                    [&](const std::vector<type::Type>& params) {
+                        signatures += "(";
+                        for (const type::Type& param : params) {
+                            signatures += toString(param);
+                        }
+                        signatures += ")";
+                    }
+                );
+                
+            }
+            std::string actualTypes = "(";
+            for (const auto& arg : args) {
+                if (actualTypes.size() > 0) {
+                    actualTypes += ", ";
+                }
+                actualTypes += toString(arg->getType());
+            }
+            ctx.error("Expected arguments of type ${signatures}, but found (${actualTypes}) instead.");
+        }
+        
+        return ParseResult();
     }
-    
-private:
-    std::string name;
-    std::vector<std::unique_ptr<UntypedExpression>> args;
 };
+
 
 } // namespace expression
 } // namespace style

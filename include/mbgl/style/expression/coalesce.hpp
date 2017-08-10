@@ -10,11 +10,11 @@ namespace mbgl {
 namespace style {
 namespace expression {
 
-class TypedCoalesce : public TypedExpression {
+class Coalesce : public Expression {
 public:
-    using Args = std::vector<std::unique_ptr<TypedExpression>>;
-    TypedCoalesce(const type::Type& type, Args args_) :
-        TypedExpression(type),
+    using Args = std::vector<std::unique_ptr<Expression>>;
+    Coalesce(const type::Type& type, Args args_) :
+        Expression(type),
         args(std::move(args_))
     {}
     
@@ -44,69 +44,33 @@ public:
         return true;
     }
     
-private:
-    Args args;
-};
-
-class UntypedCoalesce : public UntypedExpression {
-public:
-    using Args = std::vector<std::unique_ptr<UntypedExpression>>;
-    
-    UntypedCoalesce(const std::string& key, Args args_) :
-        UntypedExpression(key),
-        args(std::move(args_))
-    {}
-    
     template <typename V>
-    static ParseResult parse(const V& value, const ParsingContext& ctx) {
+    static ParseResult parse(const V& value, ParsingContext ctx) {
         using namespace mbgl::style::conversion;
         assert(isArray(value));
         auto length = arrayLength(value);
         if (length < 2) {
-            return CompileError {
-                "Expected at least one argument to \"coalesce\".",
-                ctx.key()
-            };
+            ctx.error("Expected at least one argument.");
+            return ParseResult();
         }
         
         Args args;
+        optional<type::Type> outputType = ctx.expected;
         for (std::size_t i = 1; i < length; i++) {
-            auto parsed = parseExpression(arrayMember(value, i), ParsingContext(ctx, {i}, {"coalesce"}));
-            if (parsed.template is<CompileError>()) {
+            auto parsed = parseExpression(arrayMember(value, i), ParsingContext(ctx, i, outputType));
+            if (!parsed) {
                 return parsed;
             }
-            args.push_back(std::move(parsed.template get<std::unique_ptr<UntypedExpression>>()));
+            if (!outputType) {
+                outputType = (*parsed)->getType();
+            }
+            args.push_back(std::move(*parsed));
         }
-        return std::make_unique<UntypedCoalesce>(ctx.key(), std::move(args));
+        
+        assert(outputType);
+        return ParseResult(std::make_unique<Coalesce>(*outputType, std::move(args)));
     }
     
-    TypecheckResult typecheck(std::vector<CompileError>& errors) const override {
-        optional<type::Type> outputType;
-        TypedCoalesce::Args checkedArgs;
-        
-        for (const auto& arg : args) {
-            auto checked = arg->typecheck(errors);
-            if (!checked) {
-                continue;
-            }
-            if (!outputType) {
-                outputType = (*checked)->getType();
-            } else {
-                const auto& error = matchType(*outputType, (*checked)->getType());
-                if (error) {
-                    errors.push_back({ *error, arg->getKey() });
-                    continue;
-                }
-            }
-            
-            checkedArgs.push_back(std::move(*checked));
-        }
-        
-        if (errors.size() > 0) return TypecheckResult();
-        
-        return TypecheckResult(std::make_unique<TypedCoalesce>(*outputType, std::move(checkedArgs)));
-    }
-
 private:
     Args args;
 };

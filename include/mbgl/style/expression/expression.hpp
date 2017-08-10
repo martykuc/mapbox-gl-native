@@ -74,15 +74,10 @@ struct EvaluationResult : public Result<Value> {
     {}
 };
 
-struct CompileError {
-    std::string message;
-    std::string key;
-};
-
-class TypedExpression {
+class Expression {
 public:
-    TypedExpression(type::Type type_) : type(type_) {}
-    virtual ~TypedExpression() {};
+    Expression(type::Type type_) : type(type_) {}
+    virtual ~Expression() {};
     
     virtual bool isFeatureConstant() const = 0;
     virtual bool isZoomConstant() const = 0;
@@ -110,28 +105,13 @@ public:
     
     EvaluationResult evaluate(float z, const Feature& feature) const;
     
-    type::Type getType() const { return type; }
+    type::Type getType() const { return type; };
     
 private:
     type::Type type;
 };
 
-using TypecheckResult = optional<std::unique_ptr<TypedExpression>>;
-
-class UntypedExpression {
-public:
-    UntypedExpression(std::string key_) : key(key_) {}
-    virtual ~UntypedExpression() {}
-    
-    std::string getKey() const { return key; }
-    virtual TypecheckResult typecheck(std::vector<CompileError>& errors) const = 0;
-private:
-    std::string key;
-};
-
-using ParseResult = variant<CompileError, std::unique_ptr<UntypedExpression>>;
-template <class V>
-ParseResult parseExpression(const V& value, const ParsingContext& context);
+using ParseResult = optional<std::unique_ptr<Expression>>;
 
 
 } // namespace expression

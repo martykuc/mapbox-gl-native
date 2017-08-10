@@ -16,34 +16,38 @@ namespace mbgl {
 namespace style {
 namespace expression {
 
-class TypedLiteral : public TypedExpression {
+class Literal : public Expression {
 public:
-    TypedLiteral(Value value_) : TypedExpression(typeOf(value_)), value(value_) {}
+    Literal(Value value_) : Expression(typeOf(value_)), value(value_) {}
+    Literal(type::Array type, std::vector<Value> value_) : Expression(type), value(value_) {}
     EvaluationResult evaluate(const EvaluationParameters&) const override {
         return value;
     }
     bool isFeatureConstant() const override { return true; }
     bool isZoomConstant() const override { return true; }
-private:
-    Value value;
-};
-
-class UntypedLiteral : public UntypedExpression {
-public:
-    UntypedLiteral(std::string key_, Value value_) : UntypedExpression(key_), value(value_) {}
-
-    TypecheckResult typecheck(std::vector<CompileError>&) const override {
-        return {std::make_unique<TypedLiteral>(value)};
+    
+    template <class V>
+    static ParseResult parse(const V& value, ParsingContext ctx) {
+        const Value& parsedValue = parseValue(value);
+        
+        // special case: infer the item type if possible for zero-length arrays
+        if (
+            ctx.expected &&
+            ctx.expected->template is<type::Array>() &&
+            parsedValue.template is<std::vector<Value>>()
+        ) {
+            auto type = typeOf(parsedValue).template get<type::Array>();
+            auto expected = ctx.expected->template get<type::Array>();
+            if (
+                type.N && (*type.N == 0) &&
+                (!expected.N || (*expected.N == 0))
+            ) {
+                return ParseResult(std::make_unique<Literal>(expected, parsedValue.template get<std::vector<Value>>()));
+            }
+        }
+        return ParseResult(std::make_unique<Literal>(parsedValue));
     }
     
-    Value getValue() const { return value; }
-
-    template <class V>
-    static ParseResult parse(const V& value, const ParsingContext& ctx) {
-        const Value& parsedValue = parseValue(value);
-        return std::make_unique<UntypedLiteral>(ctx.key(), parsedValue);
-    }
-
 private:
     template <class V>
     static Value parseValue(const V& value) {
@@ -74,7 +78,6 @@ private:
     
     Value value;
 };
-
 
 } // namespace expression
 } // namespace style

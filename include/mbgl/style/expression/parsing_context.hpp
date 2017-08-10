@@ -3,36 +3,41 @@
 #include <string>
 #include <vector>
 #include <mbgl/util/optional.hpp>
+#include <mbgl/style/expression/type.hpp>
 
 namespace mbgl {
 namespace style {
 namespace expression {
 
+struct ParsingError {
+    std::string message;
+    std::string key;
+};
+
 class ParsingContext {
 public:
-    ParsingContext() {}
-    ParsingContext(ParsingContext previous,
-                   optional<size_t> index,
-                   optional<std::string> name) :
-                   path(previous.path),
-                   ancestors(previous.ancestors)
-    {
-        if (index) path.emplace_back(*index);
-        if (name) ancestors.emplace_back(*name);
+    ParsingContext(std::vector<ParsingError>& errors_, optional<type::Type> expected_ = {})
+        : errors(errors_),
+          expected(expected_)
+    {}
+    
+    ParsingContext(const ParsingContext previous, std::size_t index_, optional<type::Type> expected_ = {})
+        : key(previous.key + "[" + std::to_string(index_) + "]"),
+          errors(previous.errors),
+          expected(expected_)
+    {}
+
+    void error(std::string message) {
+        errors.push_back({message, key});
     }
     
-    std::string key() const {
-        std::string result;
-        for(auto const& index : path) { result += "[" + std::to_string(index) + "]"; }
-        return result;
+    void  error(std::string message, std::size_t child) {
+        errors.push_back({message, key + "[" + std::to_string(child) + "]"});
     }
-    
-    std::string key(size_t lastIndex) const {
-        return key() + "[" + std::to_string(lastIndex) + "]";
-    }
-    
-    std::vector<size_t> path;
-    std::vector<std::string> ancestors;
+
+    std::string key;
+    std::vector<ParsingError>& errors;
+    optional<type::Type> expected;
 };
 
 } // namespace expression

@@ -4,28 +4,35 @@ namespace mbgl {
 namespace style {
 namespace expression {
 
-template<> Result<std::string> TypedMatch<std::string>::evaluateInput(const EvaluationParameters& params) const {
-    const auto& inputValue = input->evaluate<std::string>(params);
+template<> EvaluationResult Match<std::string>::evaluate(const EvaluationParameters& params) const {
+    const Result<std::string>& inputValue = input->evaluate<std::string>(params);
     if (!inputValue) {
         return inputValue.error();
     }
-    return *inputValue;
+
+    auto it = cases.find(*inputValue);
+    if (it != cases.end()) {
+        return (*it).second->evaluate(params);
+    }
+
+    return otherwise->evaluate(params);
 }
 
-template<> Result<int64_t> TypedMatch<int64_t>::evaluateInput(const EvaluationParameters& params) const {
+template<> EvaluationResult Match<int64_t>::evaluate(const EvaluationParameters& params) const {
     const auto& inputValue = input->evaluate<float>(params);
     if (!inputValue) {
         return inputValue.error();
     }
+    
     int64_t rounded = ceilf(*inputValue);
     if (*inputValue == rounded) {
-        return rounded;
-    } else {
-        return EvaluationError {
-            "Input to \"match\" must be an integer value; found " +
-            std::to_string(*inputValue) + " instead ."
-        };
+        auto it = cases.find(rounded);
+        if (it != cases.end()) {
+            return (*it).second->evaluate(params);
+        }
     }
+    
+    return otherwise->evaluate(params);
 }
 
 } // namespace expression

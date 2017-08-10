@@ -15,25 +15,25 @@ namespace detail {
 } // namespace detail
 
 template <class R, class... Params>
-std::unique_ptr<TypedExpression> Signature<R (const EvaluationParameters&, Params...)>::makeTypedExpression(std::vector<std::unique_ptr<TypedExpression>> args) const {
+std::unique_ptr<Expression> Signature<R (const EvaluationParameters&, Params...)>::makeExpression(std::vector<std::unique_ptr<Expression>> args) const {
     typename Signature::Args argsArray;
     std::copy_n(std::make_move_iterator(args.begin()), sizeof...(Params), argsArray.begin());
-    return std::make_unique<TypedCompoundExpression<Signature>>(*this, std::move(argsArray));
+    return std::make_unique<CompoundExpression<Signature>>(*this, std::move(argsArray));
 };
 
 template <typename R, typename T>
-std::unique_ptr<TypedExpression> Signature<R (const Varargs<T>&)>::makeTypedExpression(std::vector<std::unique_ptr<TypedExpression>> args) const {
-    return std::make_unique<TypedCompoundExpression<Signature>>(*this, std::move(args));
+std::unique_ptr<Expression> Signature<R (const Varargs<T>&)>::makeExpression(std::vector<std::unique_ptr<Expression>> args) const {
+    return std::make_unique<CompoundExpression<Signature>>(*this, std::move(args));
 };
 
 template <class R, class... Params>
-std::unique_ptr<TypedExpression> Signature<R (Params...)>::makeTypedExpression(std::vector<std::unique_ptr<TypedExpression>> args) const {
+std::unique_ptr<Expression> Signature<R (Params...)>::makeExpression(std::vector<std::unique_ptr<Expression>> args) const {
     typename Signature::Args argsArray;
     std::copy_n(std::make_move_iterator(args.begin()), sizeof...(Params), argsArray.begin());
-    return std::make_unique<TypedCompoundExpression<Signature>>(*this, std::move(argsArray));
+    return std::make_unique<CompoundExpression<Signature>>(*this, std::move(argsArray));
 };
 
-using Definition = CompoundExpression::Definition;
+using Definition = CompoundExpressions::Definition;
 
 // Helper for creating expression Definigion from one or more lambdas
 template <typename ...Evals, typename std::enable_if_t<sizeof...(Evals) != 0, int> = 0>
@@ -180,13 +180,13 @@ Result<mbgl::Color> rgba(float r, float g, float b, float a) {
 }
 
 template <typename ...Entries>
-std::unordered_map<std::string, CompoundExpression::Definition> initializeDefinitions(Entries... entries) {
-    std::unordered_map<std::string, CompoundExpression::Definition> definitions;
+std::unordered_map<std::string, CompoundExpressions::Definition> initializeDefinitions(Entries... entries) {
+    std::unordered_map<std::string, CompoundExpressions::Definition> definitions;
     expand_pack(definitions.insert(std::move(entries)));
     return definitions;
 }
 
-std::unordered_map<std::string, CompoundExpression::Definition> CompoundExpression::definitions = initializeDefinitions(
+std::unordered_map<std::string, Definition> CompoundExpressions::definitions = initializeDefinitions(
     define("e", []() -> Result<float> { return 2.718281828459045f; }),
     define("pi", []() -> Result<float> { return 3.141592653589793f; }),
     define("ln2", []() -> Result<float> { return 0.6931471805599453; }),
@@ -311,7 +311,30 @@ std::unordered_map<std::string, CompoundExpression::Definition> CompoundExpressi
         }
         return sum;
     }),
-    define("-", [](float a, float b) -> Result<float> { return a - b; })
+    define("-", [](float a, float b) -> Result<float> { return a - b; }),
+    define("*", [](const Varargs<float>& args) -> Result<float> {
+        float prod = 1.0f;
+        for (auto arg : args) {
+            prod *= arg;
+        }
+        return prod;
+    }),
+    define("/", [](float a, float b) -> Result<float> { return a / b; }),
+    
+    define("&&", [](const Varargs<bool>& args) -> Result<bool> {
+        bool result = true;
+        for (auto arg : args) result = result && arg;
+        return result;
+    }),
+    
+    define("||", [](const Varargs<bool>& args) -> Result<bool> {
+        bool result = false;
+        for (auto arg : args) result = result || arg;
+        return result;
+    }),
+    
+    define("!", [](bool e) -> Result<bool> { return !e; })
+    
 );
 
 } // namespace expression

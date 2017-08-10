@@ -5,6 +5,7 @@
 #include <mbgl/util/optional.hpp>
 #include <mbgl/util/variant.hpp>
 
+
 namespace mbgl {
 namespace style {
 namespace expression {
@@ -16,36 +17,43 @@ std::string toString(const T& t);
 struct NullType {
     constexpr NullType() {}
     std::string getName() const { return "Null"; }
+    bool operator==(const NullType&) const { return true; }
 };
 
 struct NumberType {
     constexpr NumberType() {}
     std::string getName() const { return "Number"; }
+    bool operator==(const NumberType&) const { return true; }
 };
 
 struct BooleanType {
     constexpr BooleanType() {}
     std::string getName() const { return "Boolean"; }
+    bool operator==(const BooleanType&) const { return true; }
 };
 
 struct StringType {
     constexpr StringType() {}
     std::string getName() const { return "String"; }
+    bool operator==(const StringType&) const { return true; }
 };
 
 struct ColorType {
     constexpr ColorType() {}
     std::string getName() const { return "Color"; }
+    bool operator==(const ColorType&) const { return true; }
 };
 
 struct ObjectType {
     constexpr ObjectType() {}
     std::string getName() const { return "Object"; }
+    bool operator==(const ObjectType&) const { return true; }
 };
 
 struct ValueType {
     constexpr ValueType() {}
     std::string getName() const { return "Value"; }
+    bool operator==(const ValueType&) const { return true; }
 };
 
 constexpr NullType Null;
@@ -55,14 +63,6 @@ constexpr BooleanType Boolean;
 constexpr ColorType Color;
 constexpr ValueType Value;
 constexpr ObjectType Object;
-
-class Typename {
-public:
-    Typename(std::string name_) : name(name_) {}
-    std::string getName() const { return name; }
-private:
-    std::string name;
-};
 
 struct Array;
 
@@ -74,7 +74,6 @@ using Type = variant<
     ColorType,
     ObjectType,
     ValueType,
-    Typename,
     mapbox::util::recursive_wrapper<Array>>;
 
 struct Array {
@@ -90,6 +89,8 @@ struct Array {
             return "Array<" + toString(itemType) + ">";
         }
     }
+
+    bool operator==(const Array& rhs) const { return itemType == rhs.itemType && N == rhs.N; }
     
     Type itemType;
     optional<std::size_t> N;
@@ -97,18 +98,6 @@ struct Array {
 
 template <class T>
 std::string toString(const T& t) { return t.match([&] (const auto& t) { return t.getName(); }); }
-
-bool isGeneric(const Type& t);
-Type resolveTypenamesIfPossible(const Type&, const std::unordered_map<std::string, Type>&);
-
-optional<std::string> matchType(const Type& expected, const Type& t);
-
-enum TypenameScope { expected, actual };
-optional<std::string> matchType(const Type& expected,
-                                const Type& t,
-                                std::unordered_map<std::string, Type>& typenames,
-                                TypenameScope scope = TypenameScope::expected);
-
 
 } // namespace type
 } // namespace expression

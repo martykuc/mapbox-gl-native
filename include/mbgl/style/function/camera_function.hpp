@@ -44,7 +44,7 @@ public:
     Stops stops;
 
 private:
-    std::shared_ptr<expression::TypedExpression> expression;
+    std::shared_ptr<expression::Expression> expression;
 };
 
 } // namespace style

@@ -4,6 +4,7 @@
 #include <mbgl/style/conversion.hpp>
 #include <mbgl/style/expression/array_assertion.hpp>
 #include <mbgl/style/expression/case.hpp>
+#include <mbgl/style/expression/check_subtype.hpp>
 #include <mbgl/style/expression/coalesce.hpp>
 #include <mbgl/style/expression/compound_expression.hpp>
 #include <mbgl/style/expression/curve.hpp>
@@ -36,64 +37,71 @@ std::string getJSType(const V& value) {
     );
 }
 
-using ParseResult = variant<CompileError, std::unique_ptr<UntypedExpression>>;
-
 template <class V>
-ParseResult parseExpression(const V& value, const ParsingContext& context)
+ParseResult parseExpression(const V& value, ParsingContext context)
 {
     using namespace mbgl::style::conversion;
+    
+    ParseResult parsed;
     
     if (isArray(value)) {
         const std::size_t length = arrayLength(value);
         if (length == 0) {
-            CompileError error = {
-                "Expected an array with at least one element. If you wanted a literal array, use [\"literal\", []].",
-                context.key()
-            };
-            return error;
+            context.error("Expected an array with at least one element. If you wanted a literal array, use [\"literal\", []].");
+            return ParseResult();
         }
         
         const optional<std::string>& op = toString(arrayMember(value, 0));
         if (!op) {
-            CompileError error = {
+            context.error(
                 "Expression name must be a string, but found " + getJSType(arrayMember(value, 0)) +
                     " instead. If you wanted a literal array, use [\"literal\", [...]].",
-                context.key(0)
-            };
-            return error;
+                0
+            );
+            return ParseResult();
         }
         
         if (*op == "literal") {
-            if (length != 2) return CompileError {
-                "'literal' expression requires exactly one argument, but found " + std::to_string(length - 1) + " instead.",
-                context.key()
-            };
-            return UntypedLiteral::parse(arrayMember(value, 1), ParsingContext(context, {1}, {"literal"}));
-        }
-        
-        if (*op == "match") {
-            return UntypedMatch::parse(value, context);
+            if (length != 2) {
+                context.error(
+                    "'literal' expression requires exactly one argument, but found " + std::to_string(length - 1) + " instead."
+                );
+                return ParseResult();
+            }
+            
+            parsed = Literal::parse(arrayMember(value, 1), ParsingContext(context, 1, context.expected));
+        } else if (*op == "match") {
+            parsed = ParseMatch::parse(value, context);
         } else if (*op == "curve") {
-            return UntypedCurve::parse(value, context);
+            parsed = ParseCurve::parse(value, context);
         } else if (*op == "coalesce") {
-            return UntypedCoalesce::parse(value, context);
+            parsed = Coalesce::parse(value, context);
         } else if (*op == "case") {
-            return UntypedCase::parse(value, context);
+            parsed = Case::parse(value, context);
         } else if (*op == "array") {
-            return UntypedArrayAssertion::parse(value, context);
+            parsed = ArrayAssertion::parse(value, context);
+        } else {
+            parsed = CompoundExpressions::parse(value, context);
+        }
+    } else {
+        if (isObject(value)) {
+            context.error("Bare objects invalid. Use [\"literal\", {...}] instead.");
+            return ParseResult();
         }
         
-        return UntypedCompoundExpression::parse(value, context);
+        parsed = Literal::parse(value, context);
     }
     
-    if (isObject(value)) {
-        return CompileError {
-            "Bare objects invalid. Use [\"literal\", {...}] instead.",
-            context.key()
-        };
+    if (!parsed) {
+        assert(context.errors.size() > 0);
+    } else if (context.expected) {
+        checkSubtype(*(context.expected), (*parsed)->getType(), context);
+        if (context.errors.size() > 0) {
+            return ParseResult();
+        }
     }
     
-    return UntypedLiteral::parse(value, context);
+    return parsed;
 }
 
 

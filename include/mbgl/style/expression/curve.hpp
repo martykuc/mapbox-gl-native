@@ -7,53 +7,13 @@
 #include <mbgl/style/conversion.hpp>
 
 namespace mbgl {
-
-namespace util {
-
-struct InterpolateExpressionValue {
-    const double t;
-    
-    template <typename T, typename Enabled = void>
-    optional<Value> operator()(const T&, const T&) const {
-        return optional<Value>();
-    };
-    
-    template <typename T, typename std::enable_if_t<Interpolatable<T>::value>>
-    optional<Value> operator()(const T& a, const T& b) const {
-        return util::interpolate(a, b, t);
-    }
-    
-    template <typename T, typename U>
-    optional<Value> operator()(const T&, const U&) const {
-        return {};
-    }
-};
-
-template<>
-struct Interpolator<std::vector<Value>> {
-    std::vector<Value> operator()(const std::vector<Value>& a, const std::vector<Value>& b, const double t) const {
-        assert(a.size() == b.size());
-        if (a.size() == 0) return {};
-        std::vector<Value> result;
-        InterpolateExpressionValue visitor {t};
-        for (std::size_t i = 0; i < a.size(); i++) {
-            const auto& v = Value::binary_visit(a[i], b[i], visitor);
-            assert(v);
-            result.push_back(*v);
-        }
-        return result;
-    }
-};
-
-} // namespace util
-
 namespace style {
 namespace expression {
 
-template <class T = void>
+template <class T>
 class ExponentialCurve {
 public:
-    using Stops = std::map<float, std::unique_ptr<TypedExpression>>;
+    using Stops = std::map<float, std::unique_ptr<Expression>>;
 
     ExponentialCurve(Stops stops_, float base_)
         : stops(std::move(stops_)),
@@ -78,15 +38,16 @@ public:
             if (!lower) { return lower.error(); }
             const auto& upper = it->second->template evaluate<T>(parameters);
             if (!upper) { return upper.error(); }
-            return util::interpolate(*lower, *upper,
+            T result = util::interpolate(*lower, *upper,
                 util::interpolationFactor(base, { std::prev(it)->first, it->first }, x));
+            return toExpressionValue(result);
         }
     }
 };
 
 class StepCurve {
 public:
-    using Stops = std::map<float, std::unique_ptr<TypedExpression>>;
+    using Stops = std::map<float, std::unique_ptr<Expression>>;
     StepCurve(Stops stops_) : stops(std::move(stops_)) {}
     
     Stops stops;
@@ -107,11 +68,19 @@ public:
     }
 };
 
-template <typename Curve>
-class TypedCurve : public TypedExpression {
+namespace detail {
+
+// used for storing intermediate state during parsing
+struct ExponentialInterpolation { float base; std::string name = "exponential"; };
+struct StepInterpolation {};
+
+}
+
+template <typename CurveType>
+class Curve : public Expression {
 public:
-    TypedCurve(const type::Type& type, std::unique_ptr<TypedExpression> input_, Curve curve_) :
-        TypedExpression(type),
+    Curve(const type::Type& type, std::unique_ptr<Expression> input_, CurveType curve_) :
+        Expression(type),
         input(std::move(input_)),
         curve(std::move(curve_))
     {}
@@ -139,199 +108,154 @@ public:
     }
     
 private:
-    std::unique_ptr<TypedExpression> input;
-    Curve curve;
+    std::unique_ptr<Expression> input;
+    CurveType curve;
 };
 
-struct ExponentialInterpolation { float base; std::string name = "exponential"; };
-struct StepInterpolation {};
-
-class UntypedCurve : public UntypedExpression {
-public:
-    using Stops = std::vector<std::pair<float, std::unique_ptr<UntypedExpression>>>;
-    using Interpolation = variant<
-        StepInterpolation,
-        ExponentialInterpolation>;
-    UntypedCurve(const std::string& key,
-                 std::unique_ptr<UntypedExpression> input_,
-                 Stops stops_,
-                 Interpolation interpolation_
-    ) : UntypedExpression(key),
-        input(std::move(input_)),
-        stops(std::move(stops_)),
-        interpolation(interpolation_)
-    {}
-    
+struct ParseCurve {
     template <typename V>
-    static ParseResult parse(const V& value, const ParsingContext& ctx) {
+    static ParseResult parse(const V& value, ParsingContext ctx) {
         using namespace mbgl::style::conversion;
         assert(isArray(value));
         auto length = arrayLength(value);
-        if (length < 4) {
-            return CompileError {
-                "Expected at least 3 arguments, but found only " + std::to_string(length - 1) + ".",
-                ctx.key()
-            };
+        if (length < 5) {
+            ctx.error("Expected at least 4 arguments, but found only " + std::to_string(length - 1) + ".");
+            return ParseResult();
         }
         
         // [curve, interp, input, 2 * (n pairs)...]
         if (length % 2 != 1) {
-            return CompileError {
-                "Missing final output value for \"curve\" expression.",
-                ctx.key()
-            };
+            ctx.error("Expected an even number of arguments.");
+            return ParseResult();
         }
         
         const auto& interp = arrayMember(value, 1);
         if (!isArray(interp) || arrayLength(interp) == 0) {
-            return CompileError {
-                "Expected an interpolation type expression, e.g. [\"linear\"].",
-                ctx.key(1)
-            };
+            ctx.error("Expected an interpolation type expression.");
+            return ParseResult();
         }
+
+        variant<detail::StepInterpolation,
+                detail::ExponentialInterpolation> interpolation;
         
-        Interpolation interpolation;
         const auto& interpName = toString(arrayMember(interp, 0));
         if (interpName && *interpName == "step") {
-            interpolation = StepInterpolation {};
+            interpolation = detail::StepInterpolation{};
         } else if (interpName && *interpName == "linear") {
-            interpolation = ExponentialInterpolation { 1.0f, "linear" };
+            interpolation = detail::ExponentialInterpolation { 1.0f, "linear" };
         } else if (interpName && *interpName == "exponential") {
             optional<double> base;
             if (arrayLength(interp) == 2) {
                 base = toDouble(arrayMember(interp, 1));
             }
             if (!base) {
-                return CompileError {
-                    "Exponential interpolation requires a numeric base",
-                    ctx.key(1)
-                };
+                ctx.error("Exponential interpolation requires a numeric base.");
+                return ParseResult();
             }
-            interpolation = ExponentialInterpolation { static_cast<float>(*base) };
+            interpolation = detail::ExponentialInterpolation { static_cast<float>(*base) };
         } else {
-            std::string name = interpName ? *interpName : "";
-            return CompileError {
-                "Unknown interpolation type " + name,
-                ctx.key(1)
-            };
+            ctx.error("Unknown interpolation type " + (interpName ? *interpName : ""));
+            return ParseResult();
         }
         
-        auto input = parseExpression(arrayMember(value, 2), ParsingContext(ctx, {2}, {"curve"}));
-        if (input.template is<CompileError>()) {
+        ParseResult input = parseExpression(arrayMember(value, 2), ParsingContext(ctx, 2, {type::Number}));
+        if (!input) {
             return input;
         }
         
-        Stops stops;
+        std::map<float, std::unique_ptr<Expression>> stops;
+        optional<type::Type> outputType = ctx.expected;
+        
         double previous = - std::numeric_limits<double>::infinity();
         for (std::size_t i = 3; i + 1 < length; i += 2) {
-            const auto& inputValue = toDouble(arrayMember(value, i));
-            if (!inputValue) {
-                return CompileError {
-                    "Input/output pairs for \"curve\" expressions must be defined using literal numeric values (not computed expressions) for the input values.",
-                    ctx.key(i)
-                };
+            const auto& label = toDouble(arrayMember(value, i));
+            if (!label) {
+                ctx.error("Input/output pairs for \"curve\" expressions must be defined using literal numeric values (not computed expressions) for the input values.");
+                return ParseResult();
             }
-            if (*inputValue < previous) {
-                return CompileError {
-                    "Input/output pairs for \"curve\" expressions must be arranged with input values in strictly ascending order.",
-                    ctx.key(i)
-                };
-            }
-            previous = *inputValue;
             
-            auto output = parseExpression(arrayMember(value, i + 1), ParsingContext(ctx, {i + 1}, {"curve"}));
-            if (output.template is<CompileError>()) {
-                return output;
+            if (*label < previous) {
+                ctx.error(
+                    "Input/output pairs for \"curve\" expressions must be arranged with input values in strictly ascending order."
+                );
+                return ParseResult();
             }
-            stops.push_back(std::make_pair(
-                *inputValue,
-                std::move(output.template get<std::unique_ptr<UntypedExpression>>())
-            ));
-        }
-        
-        return std::make_unique<UntypedCurve>(ctx.key(),
-                                              std::move(input.template get<std::unique_ptr<UntypedExpression>>()),
-                                              std::move(stops),
-                                              interpolation);
-    }
-    
-    TypecheckResult typecheck(std::vector<CompileError>& errors) const override {
-        auto checkedInput = input->typecheck(errors);
-        if (!checkedInput) {
-            return TypecheckResult();
-        }
-        auto error = matchType(type::Number, (*checkedInput)->getType());
-        if (error) {
-            errors.push_back({*error, input->getKey()});
-        }
-        
-        optional<type::Type> outputType;
-        std::map<float, std::unique_ptr<TypedExpression>> checkedStops;
-        for (const auto& stop : stops) {
-            auto checkedOutput = stop.second->typecheck(errors);
-            if (!checkedOutput) {
-                continue;
+            previous = *label;
+            
+            auto output = parseExpression(arrayMember(value, i + 1), ParsingContext(ctx, i + 1, outputType));
+            if (!output) {
+                return ParseResult();
             }
             if (!outputType) {
-                outputType = (*checkedOutput)->getType();
-            } else {
-                error = matchType(*outputType, (*checkedOutput)->getType());
-                if (error) {
-                    errors.push_back({ *error, stop.second->getKey() });
-                    continue;
-                }
+                outputType = (*output)->getType();
             }
-            checkedStops.emplace(stop.first, std::move(*checkedOutput));
+
+            stops.emplace(*label, std::move(*output));
         }
         
-        if (errors.size() > 0) return TypecheckResult();
+        assert(outputType);
+        
+        if (
+            !interpolation.template is<detail::StepInterpolation>() &&
+            *outputType != type::Number &&
+            *outputType != type::Color &&
+            !(
+                outputType->is<type::Array>() &&
+                outputType->get<type::Array>().itemType == type::Number
+            )
+        )
+        {
+            ctx.error("Type " + toString(*outputType) +
+                " is not interpolatable, and thus cannot be used as a " +
+                *interpName + " curve's output type");
+            return ParseResult();
+        }
         
         return interpolation.match(
-            [&](const StepInterpolation&) -> TypecheckResult {
-                return {std::make_unique<TypedCurve<StepCurve>>(
-                        *outputType,
-                        std::move(*checkedInput),
-                        StepCurve(std::move(checkedStops)))};
+            [&](const detail::StepInterpolation&) -> ParseResult {
+                return ParseResult(std::make_unique<Curve<StepCurve>>(
+                    *outputType,
+                    std::move(*input),
+                    StepCurve(std::move(stops))
+                ));
             },
-            [&](const ExponentialInterpolation& interp) {
-                TypecheckResult result = outputType->match(
-                    [&](const type::NumberType&) -> TypecheckResult {
-                        return makeExponential<float>(*outputType, std::move(*checkedInput), std::move(checkedStops), interp.base);
+            [&](const detail::ExponentialInterpolation& exponentialInterpolation) -> ParseResult {
+                const float base = exponentialInterpolation.base;
+                return outputType->match(
+                    [&](const type::NumberType&) -> ParseResult {
+                        return ParseResult(std::make_unique<Curve<ExponentialCurve<float>>>(
+                            *outputType,
+                            std::move(*input),
+                            ExponentialCurve<float>(std::move(stops), base)
+                        ));
                     },
-                    [&](const type::ColorType&) -> TypecheckResult {
-                        return makeExponential<mbgl::Color>(*outputType, std::move(*checkedInput), std::move(checkedStops), interp.base);
+                    [&](const type::ColorType&) -> ParseResult {
+                        return ParseResult(std::make_unique<Curve<ExponentialCurve<mbgl::Color>>>(
+                            *outputType,
+                            std::move(*input),
+                            ExponentialCurve<mbgl::Color>(std::move(stops), base)
+                        ));
                     },
-                    [&](const type::Array& arrayType) -> TypecheckResult {
-                        if (toString(arrayType.itemType) == type::Number.getName() && arrayType.N) {
-                            return makeExponential<std::vector<Value>>(*outputType, std::move(*checkedInput), std::move(checkedStops), interp.base);
+                    [&](const type::Array& arrayType) -> ParseResult {
+                        if (arrayType.itemType == type::Number && arrayType.N) {
+                            return ParseResult(std::make_unique<Curve<ExponentialCurve<std::vector<float>>>>(
+                                *outputType,
+                                std::move(*input),
+                                ExponentialCurve<std::vector<float>>(std::move(stops), base)
+                            ));
                         } else {
-                            return TypecheckResult();
+                            assert(false); // interpolability already checked above.
+                            return ParseResult();
                         }
                     },
-                    [&](const auto&) { return TypecheckResult(); }
+                    [&](const auto&) {
+                        assert(false); // interpolability already checked above.
+                        return ParseResult();
+                    }
                 );
-                if (!result) {
-                    errors.push_back({"Type " + toString(*outputType) + " is not interpolatable, and thus cannot be used as an exponential curve's output type", stops.begin()->second->getKey() });
-                }
-                return result;
             }
         );
     }
-    
-    
-private:
-    template <typename T>
-    std::unique_ptr<TypedExpression> makeExponential(const type::Type type, std::unique_ptr<TypedExpression> checkedInput, std::map<float, std::unique_ptr<TypedExpression>> checkedStops, float base) const {
-        return std::make_unique<TypedCurve<ExponentialCurve<T>>>(
-            type,
-            std::move(checkedInput),
-            ExponentialCurve<T>(std::move(checkedStops), base)
-        );
-    }
-
-    std::unique_ptr<UntypedExpression> input;
-    Stops stops;
-    Interpolation interpolation;
 };
 
 } // namespace expression

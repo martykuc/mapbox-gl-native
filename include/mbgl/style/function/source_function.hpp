@@ -61,7 +61,7 @@ public:
     optional<T> defaultValue;
 
 private:
-    std::shared_ptr<expression::TypedExpression> expression;
+    std::shared_ptr<expression::Expression> expression;
 };
 
 } // namespace style
