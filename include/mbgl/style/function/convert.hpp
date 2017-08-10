@@ -23,6 +23,24 @@ namespace mbgl {
 namespace style {
 namespace expression {
 
+namespace detail {
+
+class ErrorExpression : public Expression {
+public:
+    ErrorExpression(std::string message_) : Expression(type::Error), message(std::move(message_)) {}
+    bool isFeatureConstant() const override { return true; }
+    bool isZoomConstant() const override { return true; }
+
+    EvaluationResult evaluate(const EvaluationParameters&) const override {
+        return EvaluationError{message};
+    }
+
+private:
+    std::string message;
+};
+
+}
+
 // Create expressions representing 'classic' (i.e. stop-based) style functions
 
 struct Convert {
@@ -53,6 +71,11 @@ struct Convert {
                                                        std::vector<std::unique_ptr<Expression>>(),
                                                        ctx)));
     }
+    
+    static std::unique_ptr<Expression> makeError(std::string message) {
+        return std::make_unique<detail::ErrorExpression>(message);
+    }
+
 
     template <typename T>
     static ParseResult makeCoalesceToDefault(std::unique_ptr<Expression> main, optional<T> defaultValue) {
@@ -150,7 +173,7 @@ struct Convert {
         return ParseResult(std::make_unique<Match<Key>>(valueTypeToExpressionType<T>(),
                                             std::move(input),
                                             std::move(cases),
-                                            makeLiteral(Null)));
+                                            makeError("No matching label")));
     }
     
     template <typename T>
@@ -159,10 +182,10 @@ struct Convert {
         // case expression
         std::vector<typename Case::Branch> cases;
         auto true_case = stops.stops.find(true) == stops.stops.end() ?
-            makeLiteral(Null) :
+            makeError("No matching label") :
             makeLiteral(stops.stops.at(true));
         auto false_case = stops.stops.find(false) == stops.stops.end() ?
-            makeLiteral(Null) :
+            makeError("No matching label") :
             makeLiteral(stops.stops.at(false));
         cases.push_back(std::make_pair(std::move(input), std::move(true_case)));
         return ParseResult(std::make_unique<Case>(valueTypeToExpressionType<T>(), std::move(cases), std::move(false_case)));

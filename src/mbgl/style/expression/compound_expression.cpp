@@ -190,7 +190,7 @@ std::unordered_map<std::string, Definition> CompoundExpressions::definitions = i
     define("e", []() -> Result<float> { return 2.718281828459045f; }),
     define("pi", []() -> Result<float> { return 3.141592653589793f; }),
     define("ln2", []() -> Result<float> { return 0.6931471805599453; }),
-    
+
     define("typeof", [](const Value& v) -> Result<std::string> { return toString(typeOf(v)); }),
     define("number", assertion<float>),
     define("string", assertion<std::string>),

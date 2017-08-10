@@ -10,7 +10,7 @@ std::string errorMessage(const Type& expected, const Type& t) {
 }
 
 optional<std::string> checkSubtype(const Type& expected, const Type& t, optional<ParsingContext> context) {
-    if (t.is<NullType>()) return {};
+    if (t.is<ErrorType>()) return {};
     
     optional<std::string> result = expected.match(
         [&] (const Array& expectedArray) -> optional<std::string> {

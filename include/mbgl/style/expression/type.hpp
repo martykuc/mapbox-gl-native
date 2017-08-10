@@ -50,6 +50,12 @@ struct ObjectType {
     bool operator==(const ObjectType&) const { return true; }
 };
 
+struct ErrorType {
+    constexpr ErrorType() {}
+    std::string getName() const { return "Error"; }
+    bool operator==(const ErrorType&) const { return true; }
+};
+
 struct ValueType {
     constexpr ValueType() {}
     std::string getName() const { return "Value"; }
@@ -63,6 +69,7 @@ constexpr BooleanType Boolean;
 constexpr ColorType Color;
 constexpr ValueType Value;
 constexpr ObjectType Object;
+constexpr ErrorType Error;
 
 struct Array;
 
@@ -74,7 +81,8 @@ using Type = variant<
     ColorType,
     ObjectType,
     ValueType,
-    mapbox::util::recursive_wrapper<Array>>;
+    mapbox::util::recursive_wrapper<Array>,
+    ErrorType>;
 
 struct Array {
     Array(Type itemType_) : itemType(itemType_) {}
