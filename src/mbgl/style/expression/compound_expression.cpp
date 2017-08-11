@@ -14,23 +14,29 @@ namespace detail {
     }
 } // namespace detail
 
+CompoundExpressionBase::~CompoundExpressionBase() {};
+
 template <class R, class... Params>
-std::unique_ptr<Expression> Signature<R (const EvaluationParameters&, Params...)>::makeExpression(std::vector<std::unique_ptr<Expression>> args) const {
+std::unique_ptr<Expression> Signature<R (const EvaluationParameters&, Params...)>
+::makeExpression(const std::string& name, std::vector<std::unique_ptr<Expression>> args) const
+{
     typename Signature::Args argsArray;
     std::copy_n(std::make_move_iterator(args.begin()), sizeof...(Params), argsArray.begin());
-    return std::make_unique<CompoundExpression<Signature>>(*this, std::move(argsArray));
+    return std::make_unique<CompoundExpression<Signature>>(name, *this, std::move(argsArray));
 };
 
 template <typename R, typename T>
-std::unique_ptr<Expression> Signature<R (const Varargs<T>&)>::makeExpression(std::vector<std::unique_ptr<Expression>> args) const {
-    return std::make_unique<CompoundExpression<Signature>>(*this, std::move(args));
+std::unique_ptr<Expression> Signature<R (const Varargs<T>&)>
+::makeExpression(const std::string& name, std::vector<std::unique_ptr<Expression>> args) const {
+    return std::make_unique<CompoundExpression<Signature>>(name, *this, std::move(args));
 };
 
 template <class R, class... Params>
-std::unique_ptr<Expression> Signature<R (Params...)>::makeExpression(std::vector<std::unique_ptr<Expression>> args) const {
+std::unique_ptr<Expression> Signature<R (Params...)>
+::makeExpression(const std::string& name, std::vector<std::unique_ptr<Expression>> args) const {
     typename Signature::Args argsArray;
     std::copy_n(std::make_move_iterator(args.begin()), sizeof...(Params), argsArray.begin());
-    return std::make_unique<CompoundExpression<Signature>>(*this, std::move(argsArray));
+    return std::make_unique<CompoundExpression<Signature>>(name, *this, std::move(argsArray));
 };
 
 using Definition = CompoundExpressions::Definition;

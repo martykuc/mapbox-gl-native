@@ -36,7 +36,7 @@ struct SignatureBase {
         params(params_)
     {}
     virtual ~SignatureBase() {}
-    virtual std::unique_ptr<Expression> makeExpression(std::vector<std::unique_ptr<Expression>>) const = 0;
+    virtual std::unique_ptr<Expression> makeExpression(const std::string& name, std::vector<std::unique_ptr<Expression>>) const = 0;
     type::Type result;
     variant<std::vector<type::Type>, VarargsType> params;
 };
@@ -63,7 +63,7 @@ struct Signature<R (const EvaluationParameters&, Params...)> : SignatureBase {
         zoomConstant(isZoomConstant_)
     {}
     
-    std::unique_ptr<Expression> makeExpression(std::vector<std::unique_ptr<Expression>> args) const override;
+    std::unique_ptr<Expression> makeExpression(const std::string& name, std::vector<std::unique_ptr<Expression>> args) const override;
     
     bool isFeatureConstant() const { return featureConstant; }
     bool isZoomConstant() const { return zoomConstant; }
@@ -104,7 +104,7 @@ struct Signature<R (const Varargs<T>&)> : SignatureBase {
         evaluate(evaluate_)
     {}
     
-    std::unique_ptr<Expression> makeExpression(std::vector<std::unique_ptr<Expression>> args) const override;
+    std::unique_ptr<Expression> makeExpression(const std::string& name, std::vector<std::unique_ptr<Expression>> args) const override;
     
     bool isFeatureConstant() const { return true; }
     bool isZoomConstant() const { return true; }
@@ -143,7 +143,7 @@ struct Signature<R (Params...)> : SignatureBase {
         return applyImpl(evaluationParameters, args, std::index_sequence_for<Params...>{});
     }
     
-    std::unique_ptr<Expression> makeExpression(std::vector<std::unique_ptr<Expression>> args) const override;
+    std::unique_ptr<Expression> makeExpression(const std::string& name, std::vector<std::unique_ptr<Expression>> args) const override;
     
     R (*evaluate)(Params...);
 private:
@@ -180,14 +180,29 @@ struct Signature<Lambda, std::enable_if_t<std::is_class<Lambda>::value>>
     : Signature<decltype(&Lambda::operator())>
 { using Signature<decltype(&Lambda::operator())>::Signature; };
 
+class CompoundExpressionBase : public Expression {
+public:
+    CompoundExpressionBase(const std::string& name_, type::Type type) :
+        Expression(type),
+        name(name_)
+    {}
+    
+    std::string getName() { return name; }
+    
+    virtual ~CompoundExpressionBase();
+private:
+    std::string name;
+};
+
 template <typename Signature>
-class CompoundExpression : public Expression {
+class CompoundExpression : public CompoundExpressionBase {
 public:
     using Args = typename Signature::Args;
     
-    CompoundExpression(Signature signature_,
+    CompoundExpression(const std::string& name,
+                       Signature signature_,
                        typename Signature::Args args_) :
-        Expression(signature_.result),
+        CompoundExpressionBase(name, signature_.result),
         signature(signature_),
         args(std::move(args_))
     {}
@@ -254,10 +269,18 @@ struct CompoundExpressions {
             args.push_back(std::move(*parsed));
         }
         
-        return create(definition, std::move(args), ctx);
+        return create(*name, definition, std::move(args), ctx);
     }
     
-    static ParseResult create(const Definition& definition,
+    static ParseResult create(const std::string& name,
+                              std::vector<std::unique_ptr<Expression>> args,
+                              ParsingContext ctx)
+    {
+        return create(name, definitions.at(name), std::move(args), ctx);
+    }
+    
+    static ParseResult create(const std::string& name,
+                              const Definition& definition,
                               std::vector<std::unique_ptr<Expression>> args,
                               ParsingContext ctx)
     {
@@ -293,7 +316,7 @@ struct CompoundExpressions {
             }
             
             if (currentSignatureErrors.size() == 0) {
-                return ParseResult(signature->makeExpression(std::move(args)));
+                return ParseResult(signature->makeExpression(name, std::move(args)));
             }
         }
         
