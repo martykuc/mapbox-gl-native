@@ -2,6 +2,7 @@
 
 #include <map>
 #include <mbgl/util/interpolate.hpp>
+#include <mbgl/util/range.hpp>
 #include <mbgl/style/expression/expression.hpp>
 #include <mbgl/style/expression/parsing_context.hpp>
 #include <mbgl/style/conversion.hpp>
@@ -11,60 +12,47 @@ namespace style {
 namespace expression {
 
 template <class T>
-class ExponentialCurve {
+class ExponentialInterpolator {
 public:
-    using Stops = std::map<float, std::unique_ptr<Expression>>;
+    ExponentialInterpolator(float base_) : base(base_) {}
 
-    ExponentialCurve(Stops stops_, float base_)
-        : stops(std::move(stops_)),
-          base(base_)
-    {}
-
-    Stops stops;
     float base;
-
-    EvaluationResult evaluate(float x, const EvaluationParameters& parameters) const {
-        if (stops.empty()) {
-            return EvaluationError { "No stops in exponential curve." };
+    
+    float interpolationFactor(const Range<float>& inputLevels, const float& input) const {
+        return util::interpolationFactor(base, inputLevels, input);
+    }
+    
+    EvaluationResult interpolate(const Range<Value>& outputs, const float& t) const {
+        optional<T> lower = fromExpressionValue<T>(outputs.min);
+        if (!lower) {
+            // TODO - refactor fromExpressionValue to return EvaluationResult<T> so as to
+            // consolidate DRY up producing this error message.
+            return EvaluationError {
+                "Expected value to be of type " + toString(valueTypeToExpressionType<T>()) +
+                ", but found " + toString(typeOf(outputs.min)) + " instead."
+            };
         }
-
-        auto it = stops.upper_bound(x);
-        if (it == stops.end()) {
-            return stops.rbegin()->second->evaluate(parameters);
-        } else if (it == stops.begin()) {
-            return stops.begin()->second->evaluate(parameters);
-        } else {
-            const auto& lower = std::prev(it)->second->template evaluate<T>(parameters);
-            if (!lower) { return lower.error(); }
-            const auto& upper = it->second->template evaluate<T>(parameters);
-            if (!upper) { return upper.error(); }
-            T result = util::interpolate(*lower, *upper,
-                util::interpolationFactor(base, { std::prev(it)->first, it->first }, x));
-            return toExpressionValue(result);
+        const auto& upper = fromExpressionValue<T>(outputs.max);
+        if (!upper) {
+            return EvaluationError {
+                "Expected value to be of type " + toString(valueTypeToExpressionType<T>()) +
+                ", but found " + toString(typeOf(outputs.min)) + " instead."
+            };
         }
+        T result = util::interpolate(*lower, *upper, t);
+        return toExpressionValue(result);
     }
 };
 
-class StepCurve {
+class StepInterpolator {
 public:
-    using Stops = std::map<float, std::unique_ptr<Expression>>;
-    StepCurve(Stops stops_) : stops(std::move(stops_)) {}
-    
-    Stops stops;
-
-    EvaluationResult evaluate(float x, const EvaluationParameters& parameters) const {
-        if (stops.empty()) {
-            return EvaluationError { "No stops in exponential curve." };
-        }
-        
-        auto it = stops.upper_bound(x);
-        if (it == stops.end()) {
-            return stops.rbegin()->second->evaluate(parameters);
-        } else if (it == stops.begin()) {
-            return stops.begin()->second->evaluate(parameters);
-        } else {
-            return std::prev(it)->second->evaluate(parameters);
-        }
+    float interpolationFactor(const Range<float>&, const float&) const {
+        return 0;
+    }
+    float interpolate(const Range<Value>&, const float&) const {
+        // Assume that Curve::evaluate() will always short circuit due to
+        // interpolationFactor always returning 0.
+        assert(false);
     }
 };
 
@@ -74,26 +62,63 @@ namespace detail {
 struct ExponentialInterpolation { float base; std::string name = "exponential"; };
 struct StepInterpolation {};
 
-}
+} // namespace detail
 
-template <typename CurveType>
+
+template <typename InterpolatorT>
 class Curve : public Expression {
 public:
-    Curve(const type::Type& type, std::unique_ptr<Expression> input_, CurveType curve_) :
-        Expression(type),
+    using Interpolator = InterpolatorT;
+    
+    Curve(const type::Type& type,
+          Interpolator interpolator_,
+          std::unique_ptr<Expression> input_,
+          std::map<float, std::unique_ptr<Expression>> stops_
+    ) : Expression(type),
+        interpolator(std::move(interpolator_)),
         input(std::move(input_)),
-        curve(std::move(curve_))
+        stops(std::move(stops_))
     {}
     
     EvaluationResult evaluate(const EvaluationParameters& params) const override {
         const auto& x = input->evaluate<float>(params);
         if (!x) { return x.error(); }
-        return curve.evaluate(*x, params);
+        
+        if (stops.empty()) {
+            return EvaluationError { "No stops in exponential curve." };
+        }
+
+        auto it = stops.upper_bound(*x);
+        if (it == stops.end()) {
+            return stops.rbegin()->second->evaluate(params);
+        } else if (it == stops.begin()) {
+            return stops.begin()->second->evaluate(params);
+        } else {
+            float t = interpolator.interpolationFactor({ std::prev(it)->first, it->first }, *x);
+            if (t == 0.0f) {
+                return std::prev(it)->second->evaluate(params);
+            }
+            if (t == 1.0f) {
+                return it->second->evaluate(params);
+            }
+            
+            EvaluationResult lower = std::prev(it)->second->evaluate(params);
+            if (!lower) {
+                return lower.error();
+            }
+            EvaluationResult upper = it->second->evaluate(params);
+            if (!upper) {
+                return upper.error();
+            }
+
+            return interpolator.interpolate({*lower, *upper}, t);
+        }
+        
     }
     
     bool isFeatureConstant() const override {
         if (!input->isFeatureConstant()) { return false; }
-        for (const auto& stop : curve.stops) {
+        for (const auto& stop : stops) {
             if (!stop.second->isFeatureConstant()) { return false; }
         }
         return true;
@@ -101,15 +126,23 @@ public:
 
     bool isZoomConstant() const override {
         if (!input->isZoomConstant()) { return false; }
-        for (const auto& stop : curve.stops) {
+        for (const auto& stop : stops) {
             if (!stop.second->isZoomConstant()) { return false; }
         }
         return true;
     }
     
+    bool isZoomCurve() const {
+        if (auto z = dynamic_cast<CompoundExpressionBase*>(input.get())) {
+            return z->getName() == "zoom";
+        }
+        return false;
+    }
+    
 private:
+    Interpolator interpolator;
     std::unique_ptr<Expression> input;
-    CurveType curve;
+    std::map<float, std::unique_ptr<Expression>> stops;
 };
 
 struct ParseCurve {
@@ -207,41 +240,45 @@ struct ParseCurve {
         {
             ctx.error("Type " + toString(*outputType) +
                 " is not interpolatable, and thus cannot be used as a " +
-                *interpName + " curve's output type");
+                *interpName + " curve's output type.");
             return ParseResult();
         }
         
         return interpolation.match(
             [&](const detail::StepInterpolation&) -> ParseResult {
-                return ParseResult(std::make_unique<Curve<StepCurve>>(
+                return ParseResult(std::make_unique<Curve<StepInterpolator>>(
                     *outputType,
+                    StepInterpolator(),
                     std::move(*input),
-                    StepCurve(std::move(stops))
+                    std::move(stops)
                 ));
             },
             [&](const detail::ExponentialInterpolation& exponentialInterpolation) -> ParseResult {
                 const float base = exponentialInterpolation.base;
                 return outputType->match(
                     [&](const type::NumberType&) -> ParseResult {
-                        return ParseResult(std::make_unique<Curve<ExponentialCurve<float>>>(
+                        return ParseResult(std::make_unique<Curve<ExponentialInterpolator<float>>>(
                             *outputType,
+                            ExponentialInterpolator<float>(base),
                             std::move(*input),
-                            ExponentialCurve<float>(std::move(stops), base)
+                            std::move(stops)
                         ));
                     },
                     [&](const type::ColorType&) -> ParseResult {
-                        return ParseResult(std::make_unique<Curve<ExponentialCurve<mbgl::Color>>>(
+                        return ParseResult(std::make_unique<Curve<ExponentialInterpolator<mbgl::Color>>>(
                             *outputType,
+                            ExponentialInterpolator<mbgl::Color>(base),
                             std::move(*input),
-                            ExponentialCurve<mbgl::Color>(std::move(stops), base)
+                            std::move(stops)
                         ));
                     },
                     [&](const type::Array& arrayType) -> ParseResult {
                         if (arrayType.itemType == type::Number && arrayType.N) {
-                            return ParseResult(std::make_unique<Curve<ExponentialCurve<std::vector<float>>>>(
+                            return ParseResult(std::make_unique<Curve<ExponentialInterpolator<std::vector<float>>>>(
                                 *outputType,
+                                ExponentialInterpolator<std::vector<float>>(base),
                                 std::move(*input),
-                                ExponentialCurve<std::vector<float>>(std::move(stops), base)
+                                std::move(stops)
                             ));
                         } else {
                             assert(false); // interpolability already checked above.
