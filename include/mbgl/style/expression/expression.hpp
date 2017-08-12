@@ -77,7 +77,7 @@ struct EvaluationResult : public Result<Value> {
 class Expression {
 public:
     Expression(type::Type type_) : type(type_) {}
-    virtual ~Expression() {};
+    virtual ~Expression() = default;
     
     virtual bool isFeatureConstant() const = 0;
     virtual bool isZoomConstant() const = 0;

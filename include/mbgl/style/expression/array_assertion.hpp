@@ -70,7 +70,7 @@ public:
             auto it = itemTypeName ? itemTypes.find(*itemTypeName) : itemTypes.end();
             if (it == itemTypes.end()) {
                 ctx.error(
-                    "The item type argument of \"array\" must be one of string, number, boolean",
+                    R"(The item type argument of "array" must be one of string, number, boolean)",
                     1
                 );
                 return ParseResult();
@@ -84,7 +84,7 @@ public:
             auto n = toNumber(arrayMember(value, 2));
             if (!n || *n != ceilf(*n)) {
                 ctx.error(
-                    "The length argument to \"array\" must be a positive integer literal.",
+                    R"(The length argument to "array" must be a positive integer literal.)",
                     2
                 );
                 return ParseResult();

@@ -3,6 +3,7 @@
 #include <mbgl/style/expression/expression.hpp>
 #include <mbgl/style/expression/coalesce.hpp>
 #include <mbgl/style/expression/curve.hpp>
+#include <mbgl/style/function/convert.hpp>
 #include <mbgl/style/function/composite_exponential_stops.hpp>
 #include <mbgl/style/function/composite_interval_stops.hpp>
 #include <mbgl/style/function/composite_categorical_stops.hpp>

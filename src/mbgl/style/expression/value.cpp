@@ -116,8 +116,8 @@ struct Converter<std::array<T, N>> {
         return result;
     }
     
-    static optional<std::array<T, N>> fromExpressionValue(const Value& v) {
-        return v.match(
+    static optional<std::array<T, N>> fromExpressionValue(const Value& value) {
+        return value.match(
             [&] (const std::vector<Value>& v) -> optional<std::array<T, N>> {
                 if (v.size() != N) return optional<std::array<T, N>>();
                 std::array<T, N> result;
@@ -148,8 +148,8 @@ struct Converter<std::vector<T>> {
         return v;
     }
     
-    static optional<std::vector<T>> fromExpressionValue(const Value& v) {
-        return v.match(
+    static optional<std::vector<T>> fromExpressionValue(const Value& value) {
+        return value.match(
             [&] (const std::vector<Value>& v) -> optional<std::vector<T>> {
                 std::vector<T> result;
                 for(const auto& item : v) {
@@ -191,8 +191,8 @@ struct Converter<T, std::enable_if_t< std::is_enum<T>::value >> {
         return std::string(Enum<T>::toString(value));
     }
     
-    static optional<T> fromExpressionValue(const Value& v) {
-        return v.match(
+    static optional<T> fromExpressionValue(const Value& value) {
+        return value.match(
             [&] (const std::string& v) { return Enum<T>::toEnum(v); },
             [&] (const auto&) { return optional<T>(); }
         );

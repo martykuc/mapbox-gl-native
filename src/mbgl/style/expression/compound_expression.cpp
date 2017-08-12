@@ -14,8 +14,6 @@ namespace detail {
     }
 } // namespace detail
 
-CompoundExpressionBase::~CompoundExpressionBase() {};
-
 template <class R, class... Params>
 std::unique_ptr<Expression> Signature<R (const EvaluationParameters&, Params...)>
 ::makeExpression(const std::string& name, std::vector<std::unique_ptr<Expression>> args) const

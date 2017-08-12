@@ -47,7 +47,7 @@ ParseResult parseExpression(const V& value, ParsingContext context)
     if (isArray(value)) {
         const std::size_t length = arrayLength(value);
         if (length == 0) {
-            context.error("Expected an array with at least one element. If you wanted a literal array, use [\"literal\", []].");
+            context.error(R"(Expected an array with at least one element. If you wanted a literal array, use ["literal", []].)");
             return ParseResult();
         }
         
@@ -55,7 +55,7 @@ ParseResult parseExpression(const V& value, ParsingContext context)
         if (!op) {
             context.error(
                 "Expression name must be a string, but found " + getJSType(arrayMember(value, 0)) +
-                    " instead. If you wanted a literal array, use [\"literal\", [...]].",
+                    R"( instead. If you wanted a literal array, use ["literal", [...]].)",
                 0
             );
             return ParseResult();
@@ -85,7 +85,7 @@ ParseResult parseExpression(const V& value, ParsingContext context)
         }
     } else {
         if (isObject(value)) {
-            context.error("Bare objects invalid. Use [\"literal\", {...}] instead.");
+            context.error(R"(Bare objects invalid. Use ["literal", {...}] instead.)");
             return ParseResult();
         }
         

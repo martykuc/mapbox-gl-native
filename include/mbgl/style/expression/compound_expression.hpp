@@ -32,10 +32,10 @@ struct Varargs : std::vector<T> { using std::vector<T>::vector; };
 
 struct SignatureBase {
     SignatureBase(type::Type result_, variant<std::vector<type::Type>, VarargsType> params_) :
-        result(result_),
-        params(params_)
+        result(std::move(result_)),
+        params(std::move(params_))
     {}
-    virtual ~SignatureBase() {}
+    virtual ~SignatureBase() = default;
     virtual std::unique_ptr<Expression> makeExpression(const std::string& name, std::vector<std::unique_ptr<Expression>>) const = 0;
     type::Type result;
     variant<std::vector<type::Type>, VarargsType> params;
@@ -182,14 +182,14 @@ struct Signature<Lambda, std::enable_if_t<std::is_class<Lambda>::value>>
 
 class CompoundExpressionBase : public Expression {
 public:
-    CompoundExpressionBase(const std::string& name_, type::Type type) :
-        Expression(type),
-        name(name_)
+    CompoundExpressionBase(std::string name_, type::Type type) :
+        Expression(std::move(type)),
+        name(std::move(name_))
     {}
     
     std::string getName() { return name; }
     
-    virtual ~CompoundExpressionBase();
+    virtual ~CompoundExpressionBase() override = default;
 private:
     std::string name;
 };
@@ -251,7 +251,7 @@ struct CompoundExpressions {
         auto it = definitions.find(*name);
         if (it == definitions.end()) {
             ctx.error(
-                std::string("Unknown expression \"") + *name + "\". If you wanted a literal array, use [\"literal\", [...]].",
+                 R"(Unknown expression ")" + *name + R"(". If you wanted a literal array, use ["literal", [...]].)",
                 0
             );
             return ParseResult();

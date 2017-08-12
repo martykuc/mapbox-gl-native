@@ -18,13 +18,13 @@ class ParsingContext {
 public:
     ParsingContext(std::vector<ParsingError>& errors_, optional<type::Type> expected_ = {})
         : errors(errors_),
-          expected(expected_)
+          expected(std::move(expected_))
     {}
     
     ParsingContext(const ParsingContext previous, std::size_t index_, optional<type::Type> expected_ = {})
         : key(previous.key + "[" + std::to_string(index_) + "]"),
           errors(previous.errors),
-          expected(expected_)
+          expected(std::move(expected_))
     {}
 
     void error(std::string message) {

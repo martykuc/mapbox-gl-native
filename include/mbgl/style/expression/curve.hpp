@@ -4,6 +4,7 @@
 #include <mbgl/util/interpolate.hpp>
 #include <mbgl/util/range.hpp>
 #include <mbgl/style/expression/expression.hpp>
+#include <mbgl/style/expression/compound_expression.hpp>
 #include <mbgl/style/expression/parsing_context.hpp>
 #include <mbgl/style/conversion.hpp>
 
@@ -53,6 +54,7 @@ public:
         // Assume that Curve::evaluate() will always short circuit due to
         // interpolationFactor always returning 0.
         assert(false);
+        return 0.0f;
     }
 };
 
@@ -133,7 +135,7 @@ public:
     }
     
     bool isZoomCurve() const {
-        if (auto z = dynamic_cast<CompoundExpressionBase*>(input.get())) {
+        if (CompoundExpressionBase* z = dynamic_cast<CompoundExpressionBase*>(input.get())) {
             return z->getName() == "zoom";
         }
         return false;
@@ -207,13 +209,13 @@ struct ParseCurve {
         for (std::size_t i = 3; i + 1 < length; i += 2) {
             const auto& label = toDouble(arrayMember(value, i));
             if (!label) {
-                ctx.error("Input/output pairs for \"curve\" expressions must be defined using literal numeric values (not computed expressions) for the input values.");
+                ctx.error(R"(Input/output pairs for "curve" expressions must be defined using literal numeric values (not computed expressions) for the input values.)");
                 return ParseResult();
             }
             
             if (*label < previous) {
                 ctx.error(
-                    "Input/output pairs for \"curve\" expressions must be arranged with input values in strictly ascending order."
+                    R"(Input/output pairs for "curve" expressions must be arranged with input values in strictly ascending order.)"
                 );
                 return ParseResult();
             }
