@@ -111,7 +111,7 @@ struct Converter<mbgl::Value> {
 template <typename T, std::size_t N>
 struct Converter<std::array<T, N>> {
     static Value toExpressionValue(const std::array<T, N>& value) {
-        std::vector<Value> result;
+        std::vector<Value> result(N);
         std::copy_n(value.begin(), N, result.begin());
         return result;
     }

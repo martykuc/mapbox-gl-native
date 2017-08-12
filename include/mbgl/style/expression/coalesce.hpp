@@ -44,6 +44,14 @@ public:
         return true;
     }
     
+    std::size_t getLength() const {
+        return args.size();
+    }
+    
+    Expression* getChild(std::size_t i) const {
+        return args.at(i).get();
+    }
+    
     template <typename V>
     static ParseResult parse(const V& value, ParsingContext ctx) {
         using namespace mbgl::style::conversion;

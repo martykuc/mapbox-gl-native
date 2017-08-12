@@ -3,6 +3,7 @@
 #include <mbgl/util/color.hpp>
 #include <mbgl/util/range.hpp>
 #include <mbgl/style/position.hpp>
+#include <mbgl/style/expression/value.hpp>
 
 #include <array>
 #include <vector>
@@ -47,17 +48,31 @@ public:
     }
 };
 
-// Only safe if vectors are guaranteed at runtime to be the same length.
+
+// In order to accept Array<Number, N> as an output value for Curve
+// expressions, we need to have an interpolatable std::vector type.
+// However, style properties like line-dasharray are represented using
+// std::vector<float>, and should NOT be considered interpolatable.
+// So, we use std::vector<Value> to represent expression array values,
+// asserting that (a) the vectors are the same size, and (b) they contain
+// only numeric values.  (These invariants should be relatively safe,
+// being enforced by the expression type system.)
 template<>
-struct Interpolator<std::vector<float>> {
-    std::vector<float> operator()(const std::vector<float>& a,
-                                  const std::vector<float>& b,
+struct Interpolator<std::vector<style::expression::Value>> {
+    std::vector<style::expression::Value> operator()(const std::vector<style::expression::Value>& a,
+                                  const std::vector<style::expression::Value>& b,
                                   const double t) const {
         assert(a.size() == b.size());
         if (a.size() == 0) return {};
-        std::vector<float> result;
+        std::vector<style::expression::Value> result;
         for (std::size_t i = 0; i < a.size(); i++) {
-            result.push_back(interpolate(a[i], b[i], t));
+            assert(a[i].template is<float>());
+            assert(b[i].template is<float>());
+            style::expression::Value item = interpolate(
+                a[i].template get<float>(),
+                b[i].template get<float>(),
+                t);
+            result.push_back(item);
         }
         return result;
     }

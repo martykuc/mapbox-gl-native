@@ -139,6 +139,10 @@ public:
         return false;
     }
     
+    Interpolator getInterpolator() const {
+        return interpolator;
+    }
+    
 private:
     Interpolator interpolator;
     std::unique_ptr<Expression> input;
@@ -274,9 +278,9 @@ struct ParseCurve {
                     },
                     [&](const type::Array& arrayType) -> ParseResult {
                         if (arrayType.itemType == type::Number && arrayType.N) {
-                            return ParseResult(std::make_unique<Curve<ExponentialInterpolator<std::vector<float>>>>(
+                            return ParseResult(std::make_unique<Curve<ExponentialInterpolator<std::vector<Value>>>>(
                                 *outputType,
-                                ExponentialInterpolator<std::vector<float>>(base),
+                                ExponentialInterpolator<std::vector<Value>>(base),
                                 std::move(*input),
                                 std::move(stops)
                             ));

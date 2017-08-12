@@ -14,6 +14,9 @@
 #include <mbgl/style/function/exponential_stops.hpp>
 #include <mbgl/style/function/interval_stops.hpp>
 #include <mbgl/style/function/categorical_stops.hpp>
+#include <mbgl/style/function/composite_exponential_stops.hpp>
+#include <mbgl/style/function/composite_interval_stops.hpp>
+#include <mbgl/style/function/composite_categorical_stops.hpp>
 #include <mbgl/style/function/identity_stops.hpp>
 
 #include <string>
@@ -101,40 +104,12 @@ struct Convert {
                                                             float base,
                                                             optional<T> defaultValue)
     {
-        ParseResult curve = valueTypeToExpressionType<T>().match(
-            [&](const type::NumberType& t) -> ParseResult {
-                return ParseResult(std::make_unique<Curve<ExponentialInterpolator<float>>>(
-                    t,
-                    ExponentialInterpolator<float>(base),
-                    std::move(input),
-                    std::move(convertedStops)
-                ));
-            },
-            [&](const type::ColorType& t) -> ParseResult {
-                return ParseResult(std::make_unique<Curve<ExponentialInterpolator<mbgl::Color>>>(
-                    t,
-                    ExponentialInterpolator<mbgl::Color>(base),
-                    std::move(input),
-                    std::move(convertedStops)
-                ));
-            },
-            [&](const type::Array& arrayType) -> ParseResult {
-                if (arrayType.itemType == type::Number && arrayType.N) {
-                    return ParseResult(std::make_unique<Curve<ExponentialInterpolator<std::vector<Value>>>>(
-                        arrayType,
-                        ExponentialInterpolator<std::vector<Value>>(base),
-                        std::move(input),
-                        std::move(convertedStops)
-                    ));
-                } else {
-                    return ParseResult();
-                }
-            },
-            [&](const auto&) -> ParseResult {
-                return ParseResult();
-            }
-        );
-        
+        ParseResult curve = ParseResult(std::make_unique<Curve<ExponentialInterpolator<T>>>(
+            valueTypeToExpressionType<T>(),
+            ExponentialInterpolator<T>(base),
+            std::move(input),
+            std::move(convertedStops)
+        ));
         assert(curve);
         return makeCoalesceToDefault(std::move(*curve), defaultValue);
     }
@@ -270,6 +245,78 @@ struct Convert {
         assert(e);
         return std::move(*e);
     }
+
+    template <typename T>
+    static std::unique_ptr<Expression> toExpression(const std::string& property,
+                                                  const CompositeExponentialStops<T>& stops,
+                                                  optional<T> defaultValue)
+    {
+        std::vector<ParsingError> errors;
+        std::map<float, std::unique_ptr<Expression>> outerStops;
+        for (const std::pair<float, std::map<float, T>>& stop : stops.stops) {
+            std::unique_ptr<Expression> get = makeGet("number", property, ParsingContext(errors));
+            ParseResult innerCurve = makeExponentialCurve(std::move(get),
+                                                          convertStops(stop.second),
+                                                          stops.base,
+                                                          defaultValue);
+            assert(innerCurve);
+            outerStops.emplace(stop.first, std::move(*innerCurve));
+        }
+        ParseResult outerCurve = makeExponentialCurve(makeZoom(ParsingContext(errors)),
+                                                      std::move(outerStops),
+                                                      1.0f,
+                                                      defaultValue);
+        assert(outerCurve);
+        ParseResult e = makeCoalesceToDefault(std::move(*outerCurve), defaultValue);
+        assert(e);
+        return std::move(*e);
+    }
+    
+    template <typename T>
+    static std::unique_ptr<Expression> toExpression(const std::string& property,
+                                                  const CompositeIntervalStops<T>& stops,
+                                                  optional<T> defaultValue)
+    {
+        std::vector<ParsingError> errors;
+        std::map<float, std::unique_ptr<Expression>> outerStops;
+        for (const std::pair<float, std::map<float, T>>& stop : stops.stops) {
+            std::unique_ptr<Expression> get = makeGet("number", property, ParsingContext(errors));
+            ParseResult innerCurve = makeStepCurve(std::move(get), stop.second, defaultValue);
+            assert(innerCurve);
+            outerStops.emplace(stop.first, std::move(*innerCurve));
+        }
+        ParseResult outerCurve = makeExponentialCurve(makeZoom(ParsingContext(errors)),
+                                                      std::move(outerStops),
+                                                      1.0f,
+                                                      defaultValue);
+        assert(outerCurve);
+        ParseResult e = makeCoalesceToDefault(std::move(*outerCurve), defaultValue);
+        assert(e);
+        return std::move(*e);
+    }
+    
+    template <typename T>
+    static std::unique_ptr<Expression> toExpression(const std::string& property,
+                                                  const CompositeCategoricalStops<T>& stops,
+                                                  optional<T> defaultValue)
+    {
+        std::vector<ParsingError> errors;
+        std::map<float, std::unique_ptr<Expression>> outerStops;
+        for (const std::pair<float, std::map<CategoricalValue, T>>& stop : stops.stops) {
+            ParseResult innerCurve = convertCategoricalStops(stop.second, property);
+            assert(innerCurve);
+            outerStops.emplace(stop.first, std::move(*innerCurve));
+        }
+        ParseResult outerCurve = makeExponentialCurve(makeZoom(ParsingContext(errors)),
+                                                      std::move(outerStops),
+                                                      1.0f,
+                                                      defaultValue);
+        assert(outerCurve);
+        ParseResult e = makeCoalesceToDefault(std::move(*outerCurve), defaultValue);
+        assert(e);
+        return std::move(*e);
+    }
+
     
     template <typename T>
     static std::unique_ptr<Expression> toExpression(const std::string& property,
@@ -287,6 +334,13 @@ struct Convert {
             },
             [&] (const type::BooleanType&) {
                 return makeGet("boolean", property, ParsingContext(errors));
+            },
+            [&] (const type::ColorType&) {
+                std::vector<std::unique_ptr<Expression>> args;
+                args.push_back(makeGet("string", property, ParsingContext(errors)));
+                ParseResult color = CompoundExpressions::create("parse_color", std::move(args), ParsingContext(errors));
+                assert(color);
+                return std::move(*color);
             },
             [&] (const type::Array& arr) {
                 std::vector<std::unique_ptr<Expression>> getArgs;
