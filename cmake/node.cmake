@@ -95,6 +95,17 @@ xcode_create_scheme(
 xcode_create_scheme(
     TARGET mbgl-node
     TYPE node
+    NAME "node expression tests"
+    ARGS
+        "platform/node/test/expression.test.js"
+    OPTIONAL_ARGS
+        "group"
+        "test"
+)
+
+xcode_create_scheme(
+    TARGET mbgl-node
+    TYPE node
     NAME "node-benchmark"
     ARGS
         "platform/node/test/benchmark.js"
