@@ -50,6 +50,18 @@ public:
     using Interpolator = expression::ExponentialInterpolator<T>;
     using Curve = expression::Curve<Interpolator>;
 
+    CompositeFunction(std::unique_ptr<expression::Expression> expression_)
+    :   expression(std::move(expression_)),
+        interpolator([&]() -> Interpolator {
+            optional<Curve*> zoomCurve = findZoomCurve(expression.get());
+            assert(zoomCurve);
+            return (*zoomCurve)->getInterpolator();
+        }())
+    {
+        assert(!expression->isZoomConstant());
+        assert(!expression->isFeatureConstant());
+    }
+
     CompositeFunction(std::string property_, Stops stops_, optional<T> defaultValue_ = {})
     :   property(std::move(property_)),
         stops(std::move(stops_)),

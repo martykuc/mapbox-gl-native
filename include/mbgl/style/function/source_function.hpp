@@ -29,6 +29,13 @@ public:
             CategoricalStops<T>,
             IdentityStops<T>>>;
 
+    SourceFunction(std::unique_ptr<expression::Expression> expression_)
+        : expression(std::move(expression_))
+    {
+        assert(expression->isZoomConstant());
+        assert(!expression->isFeatureConstant());
+    }
+    
     SourceFunction(std::string property_, Stops stops_, optional<T> defaultValue_ = {})
         : property(std::move(property_)),
           stops(std::move(stops_)),

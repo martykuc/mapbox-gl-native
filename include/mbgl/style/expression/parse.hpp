@@ -2,15 +2,15 @@
 
 #include <memory>
 #include <mbgl/style/conversion.hpp>
-#include <mbgl/style/expression/array_assertion.hpp>
-#include <mbgl/style/expression/case.hpp>
 #include <mbgl/style/expression/check_subtype.hpp>
-#include <mbgl/style/expression/coalesce.hpp>
-#include <mbgl/style/expression/compound_expression.hpp>
-#include <mbgl/style/expression/curve.hpp>
 #include <mbgl/style/expression/expression.hpp>
-#include <mbgl/style/expression/literal.hpp>
-#include <mbgl/style/expression/match.hpp>
+#include <mbgl/style/expression/parse/array_assertion.hpp>
+#include <mbgl/style/expression/parse/case.hpp>
+#include <mbgl/style/expression/parse/coalesce.hpp>
+#include <mbgl/style/expression/parse/compound_expression.hpp>
+#include <mbgl/style/expression/parse/curve.hpp>
+#include <mbgl/style/expression/parse/literal.hpp>
+#include <mbgl/style/expression/parse/match.hpp>
 #include <mbgl/style/expression/parsing_context.hpp>
 
 namespace mbgl {
@@ -69,19 +69,19 @@ ParseResult parseExpression(const V& value, ParsingContext context)
                 return ParseResult();
             }
             
-            parsed = Literal::parse(arrayMember(value, 1), context);
+            parsed = ParseLiteral::parse(arrayMember(value, 1), context);
         } else if (*op == "match") {
             parsed = ParseMatch::parse(value, context);
         } else if (*op == "curve") {
             parsed = ParseCurve::parse(value, context);
         } else if (*op == "coalesce") {
-            parsed = Coalesce::parse(value, context);
+            parsed = ParseCoalesce::parse(value, context);
         } else if (*op == "case") {
-            parsed = Case::parse(value, context);
+            parsed = ParseCase::parse(value, context);
         } else if (*op == "array") {
-            parsed = ArrayAssertion::parse(value, context);
+            parsed = ParseArrayAssertion::parse(value, context);
         } else {
-            parsed = CompoundExpressions::parse(value, context);
+            parsed = ParseCompoundExpression::parse(value, context);
         }
     } else {
         if (isObject(value)) {
@@ -89,7 +89,7 @@ ParseResult parseExpression(const V& value, ParsingContext context)
             return ParseResult();
         }
         
-        parsed = Literal::parse(value, context);
+        parsed = ParseLiteral::parse(value, context);
     }
     
     if (!parsed) {

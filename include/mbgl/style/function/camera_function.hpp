@@ -19,6 +19,13 @@ public:
             IntervalStops<T>>,
         variant<
             IntervalStops<T>>>;
+    
+    CameraFunction(std::unique_ptr<expression::Expression> expression_)
+        : expression(std::move(expression_))
+    {
+        assert(!expression->isZoomConstant());
+        assert(expression->isFeatureConstant());
+    }
 
     CameraFunction(Stops stops_)
         : stops(std::move(stops_)),

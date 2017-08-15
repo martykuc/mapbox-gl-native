@@ -409,6 +409,16 @@ set(MBGL_CORE_FILES
     src/mbgl/style/expression/match.cpp
     src/mbgl/style/expression/value.cpp
 
+    # style/expression/parse
+    include/mbgl/style/expression/parse/array_assertion.hpp
+    include/mbgl/style/expression/parse/case.hpp
+    include/mbgl/style/expression/parse/coalesce.hpp
+    include/mbgl/style/expression/parse/compound_expression.hpp
+    include/mbgl/style/expression/parse/curve.hpp
+    include/mbgl/style/expression/parse/let.hpp
+    include/mbgl/style/expression/parse/literal.hpp
+    include/mbgl/style/expression/parse/match.hpp
+
     # style/function
     include/mbgl/style/function/camera_function.hpp
     include/mbgl/style/function/categorical_stops.hpp

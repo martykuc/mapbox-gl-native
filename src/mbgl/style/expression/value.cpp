@@ -142,21 +142,6 @@ std::vector<Value> toArrayValue(const Container& value) {
     return result;
 }
 
-template <typename T, typename Container>
-optional<Container> fromArrayValue(const std::vector<Value>& value) {
-    Container result;
-    auto it = result.begin();
-    for(const Value& item : value) {
-        optional<T> convertedItem = Converter<T>::fromExpressionValue(item);
-        if (!convertedItem) {
-            return optional<Container>();
-        }
-        *it = *convertedItem;
-        it = std::next(it);
-    }
-    return result;
-}
-
 template <typename T, std::size_t N>
 struct Converter<std::array<T, N>> {
     static Value toExpressionValue(const std::array<T, N>& value) {
@@ -167,7 +152,17 @@ struct Converter<std::array<T, N>> {
         return value.match(
             [&] (const std::vector<Value>& v) -> optional<std::array<T, N>> {
                 if (v.size() != N) return optional<std::array<T, N>>();
-                return fromArrayValue<T, std::array<T, N>>(v);
+                    std::array<T, N> result;
+                    auto it = result.begin();
+                    for(const Value& item : v) {
+                        optional<T> convertedItem = Converter<T>::fromExpressionValue(item);
+                        if (!convertedItem) {
+                            return optional<std::array<T, N>>();
+                        }
+                        *it = *convertedItem;
+                        it = std::next(it);
+                    }
+                    return result;
             },
             [&] (const auto&) { return optional<std::array<T, N>>(); }
         );
@@ -187,7 +182,15 @@ struct Converter<std::vector<T>> {
     static optional<std::vector<T>> fromExpressionValue(const Value& value) {
         return value.match(
             [&] (const std::vector<Value>& v) -> optional<std::vector<T>> {
-                return fromArrayValue<T, std::vector<T>>(v);
+                std::vector<T> result;
+                for(const Value& item : v) {
+                    optional<T> convertedItem = Converter<T>::fromExpressionValue(item);
+                    if (!convertedItem) {
+                        return optional<std::vector<T>>();
+                    }
+                    result.push_back(*convertedItem);
+                }
+                return result;
             },
             [&] (const auto&) { return optional<std::vector<T>>(); }
         );
