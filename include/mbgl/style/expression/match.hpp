@@ -153,15 +153,49 @@ private:
         optional<type::Type> type;
         
         auto value = toValue(input);
-        if (value && isIntegerValue(*value)) {
-            type = {type::Number};
-            result = {*numericValue<int64_t>(*value)};
-        } else if (value && value->template is<std::string>()) {
-            type = {type::String};
-            result = {value->template get<std::string>()};
+        
+        if (value) {
+            value->match(
+                [&] (uint64_t n) {
+                    if (!Value::isSafeNumericValue(n)) {
+                        ctx.error("Numeric values must be no larger than " + std::to_string(Value::max()) + ".");
+                    } else {
+                        type = {type::Number};
+                        result = {static_cast<int64_t>(n)};
+                    }
+                },
+                [&] (int64_t n) {
+                    if (!Value::isSafeNumericValue(n)) {
+                        ctx.error("Numeric values must be no larger than " + std::to_string(Value::max()) + ".");
+                    } else {
+                        type = {type::Number};
+                        result = {n};
+                    }
+                },
+                [&] (double n) {
+                    if (!Value::isSafeNumericValue(n)) {
+                        ctx.error("Numeric values must be no larger than " + std::to_string(Value::max()) + ".");
+                    } else if (n != ceilf(n)) {
+                        ctx.error("Numeric branch labels must be integer values.");
+                    } else {
+                        type = {type::Number};
+                        result = {static_cast<int64_t>(n)};
+                    }
+                },
+                [&] (const std::string& s) {
+                    type = {type::String};
+                    result = {s};
+                },
+                [&] (const auto&) {
+                    ctx.error("Branch labels must be numbers or strings.");
+                }
+            );
         } else {
             ctx.error("Branch labels must be numbers or strings.");
-            return optional<InputType>();
+        }
+        
+        if (!type) {
+            return result;
         }
         
         if (!inputType) {
@@ -203,15 +237,6 @@ private:
             std::move(typedCases),
             std::move(otherwise)
         ));
-    }
-
-    static bool isIntegerValue(const mbgl::Value& v) {
-        return v.match(
-            [] (uint64_t) { return true; },
-            [] (int64_t) { return true; },
-            [] (double t) { return t == ceilf(t); },
-            [] (const auto&) { return false; }
-        );
     }
 };
 

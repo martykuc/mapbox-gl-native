@@ -50,11 +50,11 @@ public:
     float interpolationFactor(const Range<float>&, const float&) const {
         return 0;
     }
-    float interpolate(const Range<Value>&, const float&) const {
+    EvaluationResult interpolate(const Range<Value>&, const float&) const {
         // Assume that Curve::evaluate() will always short circuit due to
         // interpolationFactor always returning 0.
         assert(false);
-        return 0.0f;
+        return Null;
     }
 };
 
@@ -207,15 +207,46 @@ struct ParseCurve {
         
         double previous = - std::numeric_limits<double>::infinity();
         for (std::size_t i = 3; i + 1 < length; i += 2) {
-            const auto& label = toDouble(arrayMember(value, i));
+            const optional<mbgl::Value>& labelValue = toValue(arrayMember(value, i));
+            optional<double> label;
+            optional<std::string> labelError;
+            if (labelValue) {
+                labelValue->match(
+                    [&](uint64_t n) {
+                        if (!Value::isSafeNumericValue(n)) {
+                            labelError = {"Numeric values must be no larger than " + std::to_string(Value::max()) + "."};
+                        } else {
+                            label = {static_cast<double>(n)};
+                        }
+                    },
+                    [&](int64_t n) {
+                        if (!Value::isSafeNumericValue(n)) {
+                            labelError = {"Numeric values must be no larger than " + std::to_string(Value::max()) + "."};
+                        } else {
+                            label = {static_cast<double>(n)};
+                        }
+                    },
+                    [&](double n) {
+                        if (!Value::isSafeNumericValue(n)) {
+                            labelError = {"Numeric values must be no larger than " + std::to_string(Value::max()) + "."};
+                        } else {
+                            label = {static_cast<double>(n)};
+                        }
+                    },
+                    [&](const auto&) {}
+                );
+            }
             if (!label) {
-                ctx.error(R"(Input/output pairs for "curve" expressions must be defined using literal numeric values (not computed expressions) for the input values.)");
+                ctx.error(labelError ? *labelError :
+                    R"(Input/output pairs for "curve" expressions must be defined using literal numeric values (not computed expressions) for the input values.)",
+                    i);
                 return ParseResult();
             }
             
             if (*label < previous) {
                 ctx.error(
-                    R"(Input/output pairs for "curve" expressions must be arranged with input values in strictly ascending order.)"
+                    R"(Input/output pairs for "curve" expressions must be arranged with input values in strictly ascending order.)",
+                    i
                 );
                 return ParseResult();
             }

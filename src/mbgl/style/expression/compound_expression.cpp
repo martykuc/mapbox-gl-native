@@ -133,7 +133,7 @@ static Definition defineGet() {
 
 // Define "zoom" expression, it being the only one for which isZoomConstant == false.
 static std::pair<std::string, Definition> defineZoom() {
-    auto zoom = [](const EvaluationParameters& params) -> Result<float> {
+    auto zoom = [](const EvaluationParameters& params) -> Result<double> {
         if (!params.zoom) {
             return EvaluationError {
                 "The 'zoom' expression is unavailable in the current evaluation context."
@@ -157,13 +157,13 @@ Result<T> assertion(const Value& v) {
     return v.get<T>();
 }
 
-std::string stringifyColor(float r, float g, float b, float a) {
+std::string stringifyColor(double r, double g, double b, double a) {
     return stringify(r) + ", " +
         stringify(g) + ", " +
         stringify(b) + ", " +
         stringify(a);
 }
-Result<mbgl::Color> rgba(float r, float g, float b, float a) {
+Result<mbgl::Color> rgba(double r, double g, double b, double a) {
     if (
         r < 0 || r > 255 ||
         g < 0 || g > 255 ||
@@ -191,27 +191,27 @@ std::unordered_map<std::string, CompoundExpressions::Definition> initializeDefin
 }
 
 std::unordered_map<std::string, Definition> CompoundExpressions::definitions = initializeDefinitions(
-    define("e", []() -> Result<float> { return 2.718281828459045f; }),
-    define("pi", []() -> Result<float> { return 3.141592653589793f; }),
-    define("ln2", []() -> Result<float> { return 0.6931471805599453; }),
+    define("e", []() -> Result<double> { return 2.718281828459045f; }),
+    define("pi", []() -> Result<double> { return 3.141592653589793f; }),
+    define("ln2", []() -> Result<double> { return 0.6931471805599453; }),
 
     define("typeof", [](const Value& v) -> Result<std::string> { return toString(typeOf(v)); }),
-    define("number", assertion<float>),
+    define("number", assertion<double>),
     define("string", assertion<std::string>),
     define("boolean", assertion<bool>),
     
     define("to_string", [](const Value& v) -> Result<std::string> { return stringify(v); }),
-    define("to_number", [](const Value& v) -> Result<float> {
-        optional<float> result = v.match(
-            [](const float f) -> optional<float> { return f; },
-            [](const std::string& s) -> optional<float> {
+    define("to_number", [](const Value& v) -> Result<double> {
+        optional<double> result = v.match(
+            [](const double f) -> optional<double> { return f; },
+            [](const std::string& s) -> optional<double> {
                 try {
                     return std::stof(s);
                 } catch(std::exception) {
-                    return optional<float>();
+                    return optional<double>();
                 }
             },
-            [](const auto&) { return optional<float>(); }
+            [](const auto&) { return optional<double>(); }
         );
         if (!result) {
             return EvaluationError {
@@ -222,15 +222,15 @@ std::unordered_map<std::string, Definition> CompoundExpressions::definitions = i
     }),
     define("to_boolean", [](const Value& v) -> Result<bool> {
         return v.match(
-            [&] (float f) { return (bool)f; },
+            [&] (double f) { return (bool)f; },
             [&] (const std::string& s) { return s.length() > 0; },
             [&] (bool b) { return b; },
             [&] (const NullValue&) { return false; },
             [&] (const auto&) { return true; }
         );
     }),
-    define("to_rgba", [](const mbgl::Color& color) -> Result<std::array<float, 4>> {
-        return std::array<float, 4> {{ color.r, color.g, color.b, color.a }};
+    define("to_rgba", [](const mbgl::Color& color) -> Result<std::array<double, 4>> {
+        return std::array<double, 4> {{ color.r, color.g, color.b, color.a }};
     }),
     
     define("parse_color", [](const std::string& colorString) -> Result<mbgl::Color> {
@@ -242,16 +242,16 @@ std::unordered_map<std::string, Definition> CompoundExpressions::definitions = i
     }),
     
     define("rgba", rgba),
-    define("rgb", [](float r, float g, float b) { return rgba(r, g, b, 1.0f); }),
+    define("rgb", [](double r, double g, double b) { return rgba(r, g, b, 1.0f); }),
     
     defineZoom(),
     
     std::pair<std::string, Definition>("has", defineHas()),
     std::pair<std::string, Definition>("get", defineGet()),
     
-    define("length", [](const std::vector<Value>& arr) -> Result<float> {
+    define("length", [](const std::vector<Value>& arr) -> Result<double> {
         return arr.size();
-    }, [] (const std::string s) -> Result<float> {
+    }, [] (const std::string s) -> Result<double> {
         return s.size();
     }),
     
@@ -308,22 +308,22 @@ std::unordered_map<std::string, Definition> CompoundExpressions::definitions = i
         );
     }),
     
-    define("+", [](const Varargs<float>& args) -> Result<float> {
-        float sum = 0.0f;
+    define("+", [](const Varargs<double>& args) -> Result<double> {
+        double sum = 0.0f;
         for (auto arg : args) {
             sum += arg;
         }
         return sum;
     }),
-    define("-", [](float a, float b) -> Result<float> { return a - b; }),
-    define("*", [](const Varargs<float>& args) -> Result<float> {
-        float prod = 1.0f;
+    define("-", [](double a, double b) -> Result<double> { return a - b; }),
+    define("*", [](const Varargs<double>& args) -> Result<double> {
+        double prod = 1.0f;
         for (auto arg : args) {
             prod *= arg;
         }
         return prod;
     }),
-    define("/", [](float a, float b) -> Result<float> { return a / b; }),
+    define("/", [](double a, double b) -> Result<double> { return a / b; }),
     
     define("&&", [](const Varargs<bool>& args) -> Result<bool> {
         bool result = true;

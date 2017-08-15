@@ -69,7 +69,7 @@ ParseResult parseExpression(const V& value, ParsingContext context)
                 return ParseResult();
             }
             
-            parsed = Literal::parse(arrayMember(value, 1), ParsingContext(context, 1, context.expected));
+            parsed = Literal::parse(arrayMember(value, 1), context);
         } else if (*op == "match") {
             parsed = ParseMatch::parse(value, context);
         } else if (*op == "curve") {

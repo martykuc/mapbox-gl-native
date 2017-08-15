@@ -8,7 +8,7 @@ namespace expression {
 type::Type typeOf(const Value& value) {
     return value.match(
         [&](bool) -> type::Type { return type::Boolean; },
-        [&](float) -> type::Type { return type::Number; },
+        [&](double) -> type::Type { return type::Number; },
         [&](const std::string&) -> type::Type { return type::String; },
         [&](const mbgl::Color&) -> type::Type { return type::Color; },
         [&](const NullValue&) -> type::Type { return type::Null; },
@@ -39,7 +39,7 @@ std::string stringify(const Value& value) {
     return value.match(
         [&] (const NullValue&) { return std::string("null"); },
         [&] (bool b) { return std::string(b ? "true" : "false"); },
-        [&] (float f) {
+        [&] (double f) {
             std::stringstream ss;
             ss << f;
             return ss.str();
@@ -76,6 +76,27 @@ struct Converter {
     }
 };
 
+template <>
+struct Converter<float> {
+    static Value toExpressionValue(const float& value) {
+        return static_cast<double>(value);
+    }
+    
+    static optional<float> fromExpressionValue(const Value& value) {
+        if (value.template is<double>()) {
+            double v = value.template get<double>();
+            if (v <= Value::max()) {
+                return static_cast<float>(v);
+            }
+        }
+        return optional<float>();
+    }
+    
+    static type::Type expressionType() {
+        return type::Number;
+    }
+};
+
 template<>
 struct Converter<mbgl::Value> {
     static Value toExpressionValue(const mbgl::Value& value) {
@@ -103,33 +124,50 @@ struct Converter<mbgl::Value> {
     Value operator()(const std::string& s) { return s; }
     Value operator()(const bool& b) { return b; }
     Value operator()(const mbgl::NullValue) { return Null; }
-    
-    template <typename T>
-    Value operator()(const T& v) { return *numericValue<float>(v); }
+    Value operator()(const double& v) { return v; }
+    Value operator()(const uint64_t& v) {
+        return v > static_cast<uint64_t>(Value::max()) ? static_cast<double>(Value::max()) : v;
+    }
+    Value operator()(const int64_t& v) {
+        return v > std::numeric_limits<double>::max() ? std::numeric_limits<double>::max() : v;
+    }
 };
+
+template <typename T, typename Container>
+std::vector<Value> toArrayValue(const Container& value) {
+    std::vector<Value> result;
+    for (const T& item : value) {
+        result.push_back(Converter<T>::toExpressionValue(item));
+    }
+    return result;
+}
+
+template <typename T, typename Container>
+optional<Container> fromArrayValue(const std::vector<Value>& value) {
+    Container result;
+    auto it = result.begin();
+    for(const Value& item : value) {
+        optional<T> convertedItem = Converter<T>::fromExpressionValue(item);
+        if (!convertedItem) {
+            return optional<Container>();
+        }
+        *it = *convertedItem;
+        it = std::next(it);
+    }
+    return result;
+}
 
 template <typename T, std::size_t N>
 struct Converter<std::array<T, N>> {
     static Value toExpressionValue(const std::array<T, N>& value) {
-        std::vector<Value> result(N);
-        std::copy_n(value.begin(), N, result.begin());
-        return result;
+        return toArrayValue<T>(value);
     }
     
     static optional<std::array<T, N>> fromExpressionValue(const Value& value) {
         return value.match(
             [&] (const std::vector<Value>& v) -> optional<std::array<T, N>> {
                 if (v.size() != N) return optional<std::array<T, N>>();
-                std::array<T, N> result;
-                auto it = result.begin();
-                for(const auto& item : v) {
-                    if (!item.template is<T>()) {
-                        return optional<std::array<T, N>>();
-                    }
-                    *it = item.template get<T>();
-                    it = std::next(it);
-                }
-                return result;
+                return fromArrayValue<T, std::array<T, N>>(v);
             },
             [&] (const auto&) { return optional<std::array<T, N>>(); }
         );
@@ -143,22 +181,13 @@ struct Converter<std::array<T, N>> {
 template <typename T>
 struct Converter<std::vector<T>> {
     static Value toExpressionValue(const std::vector<T>& value) {
-        std::vector<Value> v(value.size());
-        std::copy(value.begin(), value.end(), v.begin());
-        return v;
+        return toArrayValue<T>(value);
     }
     
     static optional<std::vector<T>> fromExpressionValue(const Value& value) {
         return value.match(
             [&] (const std::vector<Value>& v) -> optional<std::vector<T>> {
-                std::vector<T> result;
-                for(const auto& item : v) {
-                    if (!item.template is<T>()) {
-                        return optional<std::vector<T>>();
-                    }
-                    result.push_back(item.template get<T>());
-                }
-                return result;
+                return fromArrayValue<T, std::vector<T>>(v);
             },
             [&] (const auto&) { return optional<std::vector<T>>(); }
         );
@@ -227,7 +256,7 @@ type::Type valueTypeToExpressionType() {
 template <> type::Type valueTypeToExpressionType<Value>() { return type::Value; }
 template <> type::Type valueTypeToExpressionType<NullValue>() { return type::Null; }
 template <> type::Type valueTypeToExpressionType<bool>() { return type::Boolean; }
-template <> type::Type valueTypeToExpressionType<float>() { return type::Number; }
+template <> type::Type valueTypeToExpressionType<double>() { return type::Number; }
 template <> type::Type valueTypeToExpressionType<std::string>() { return type::String; }
 template <> type::Type valueTypeToExpressionType<mbgl::Color>() { return type::Color; }
 template <> type::Type valueTypeToExpressionType<std::unordered_map<std::string, Value>>() { return type::Object; }
@@ -245,6 +274,11 @@ struct instantiate {
     }
 };
 
+// for to_rgba expression
+template struct instantiate<std::array<double, 4>>;
+
+// layout/paint property types
+template struct instantiate<float>;
 template struct instantiate<std::array<float, 2>>;
 template struct instantiate<std::array<float, 4>>;
 template struct instantiate<std::vector<float>>;

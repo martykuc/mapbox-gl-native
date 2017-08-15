@@ -66,11 +66,11 @@ struct Interpolator<std::vector<style::expression::Value>> {
         if (a.size() == 0) return {};
         std::vector<style::expression::Value> result;
         for (std::size_t i = 0; i < a.size(); i++) {
-            assert(a[i].template is<float>());
-            assert(b[i].template is<float>());
+            assert(a[i].template is<double>());
+            assert(b[i].template is<double>());
             style::expression::Value item = interpolate(
-                a[i].template get<float>(),
-                b[i].template get<float>(),
+                a[i].template get<double>(),
+                b[i].template get<double>(),
                 t);
             result.push_back(item);
         }

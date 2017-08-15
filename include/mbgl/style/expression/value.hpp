@@ -19,14 +19,25 @@ struct Value;
 using ValueBase = variant<
     NullValue,
     bool,
-    // TODO: should we break up the numeric types here like mbgl::Value does?
-    float,
+    double,
     std::string,
     mbgl::Color,
     mapbox::util::recursive_wrapper<std::vector<Value>>,
     mapbox::util::recursive_wrapper<std::unordered_map<std::string, Value>>>;
 struct Value : ValueBase {
     using ValueBase::ValueBase;
+
+    // Javascript's Number.MAX_SAFE_INTEGER
+    static uint64_t max() { return 9007199254740991ULL; }
+    
+    static bool isSafeNumericValue(uint64_t x) { return x <= max(); };
+    static bool isSafeNumericValue(int64_t x) {
+        return static_cast<uint64_t>(x > 0 ? x : -x) <= max();
+    }
+    static bool isSafeNumericValue(double x) {
+        return static_cast<uint64_t>(x > 0 ? x : -x) <= max();
+    }
+    
 };
 
 Value toExpressionValue(const Value&);

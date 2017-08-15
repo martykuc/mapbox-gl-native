@@ -121,7 +121,7 @@ struct ToValue {
         return scope.Escape(Nan::New(t));
     }
 
-    v8::Local<v8::Value> operator()(float t) {
+    v8::Local<v8::Value> operator()(double t) {
         Nan::EscapableHandleScope scope;
         return scope.Escape(Nan::New(t));
     }
@@ -141,7 +141,12 @@ struct ToValue {
     }
     
     v8::Local<v8::Value> operator()(const mbgl::Color& color) {
-        return operator()(std::vector<Value> { color.r, color.g, color.b, color.a });
+        return operator()(std::vector<Value> {
+            static_cast<double>(color.r),
+            static_cast<double>(color.g),
+            static_cast<double>(color.b),
+            static_cast<double>(color.a)
+        });
     }
 
     v8::Local<v8::Value> operator()(const std::unordered_map<std::string, Value>& map) {

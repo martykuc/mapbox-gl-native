@@ -69,8 +69,8 @@ public:
 struct EvaluationResult : public Result<Value> {
     using Result::Result;
     
-    EvaluationResult(const std::array<float, 4>& arr) :
-        Result(std::vector<Value>(arr.begin(), arr.end()))
+    EvaluationResult(const std::array<double, 4>& arr) :
+        Result(toExpressionValue(arr))
     {}
 };
 
