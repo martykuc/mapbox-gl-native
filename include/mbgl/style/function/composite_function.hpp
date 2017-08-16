@@ -87,7 +87,7 @@ public:
 
     template <class Feature>
     T evaluate(float zoom, const Feature& feature, T finalDefaultValue) const {
-        auto result = expression->evaluate<T>(expression::EvaluationParameters { {zoom}, &feature });
+        auto result = expression->evaluate<T>(expression::EvaluationParameters({zoom}, &feature));
         if (!result) {
             return finalDefaultValue;
         }

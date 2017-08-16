@@ -13,8 +13,8 @@ class Case : public Expression {
 public:
     using Branch = std::pair<std::unique_ptr<Expression>, std::unique_ptr<Expression>>;
     
-    Case(type::Type type, std::vector<Branch> cases_, std::unique_ptr<Expression> otherwise_
-    ) : Expression(type),
+    Case(type::Type type_, std::vector<Branch> cases_, std::unique_ptr<Expression> otherwise_
+    ) : Expression(type_),
         cases(std::move(cases_)),
         otherwise(std::move(otherwise_))
     {}

@@ -35,7 +35,7 @@ public:
     {}
 
     T evaluate(float zoom) const {
-        auto result = expression->evaluate<T>(expression::EvaluationParameters { zoom });
+        auto result = expression->evaluate<T>(expression::EvaluationParameters(zoom, nullptr));
         if (!result) return T();
         return *result;
     }

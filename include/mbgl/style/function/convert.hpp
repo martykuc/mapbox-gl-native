@@ -42,7 +42,8 @@ private:
     std::string message;
 };
 
-}
+} // namespace detail
+
 
 // Create expressions representing 'classic' (i.e. stop-based) style functions
 

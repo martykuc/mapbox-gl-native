@@ -47,7 +47,7 @@ public:
 
     template <class Feature>
     T evaluate(const Feature& feature, T finalDefaultValue) const {
-        auto result = expression->evaluate<T>(expression::EvaluationParameters { optional<float>(), &feature });
+        auto result = expression->evaluate<T>(expression::EvaluationParameters(&feature));
         if (!result) {
             return finalDefaultValue;
         }

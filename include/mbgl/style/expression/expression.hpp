@@ -24,8 +24,14 @@ struct EvaluationError {
 };
 
 struct EvaluationParameters {
+    EvaluationParameters(float zoom_) : zoom(zoom_), feature(nullptr) {}
+    EvaluationParameters(GeometryTileFeature const * feature_) : zoom(optional<float>()), feature(feature_) {}
+    EvaluationParameters(float zoom_, GeometryTileFeature const * feature_) :
+        zoom(zoom_), feature(feature_)
+    {}
+    
     optional<float> zoom;
-    GeometryTileFeature const * feature = nullptr;
+    GeometryTileFeature const * feature;
 };
 
 template<typename T>
@@ -76,7 +82,7 @@ struct EvaluationResult : public Result<Value> {
 
 class Expression {
 public:
-    Expression(type::Type type_) : type(type_) {}
+    Expression(type::Type type_) : type(std::move(type_)) {}
     virtual ~Expression() = default;
     
     virtual bool isFeatureConstant() const = 0;

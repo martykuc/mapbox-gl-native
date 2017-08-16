@@ -18,8 +18,8 @@ namespace expression {
 
 class ArrayAssertion : public Expression  {
 public:
-    ArrayAssertion(type::Array type, std::unique_ptr<Expression> input_) :
-        Expression(type),
+    ArrayAssertion(type::Array type_, std::unique_ptr<Expression> input_) :
+        Expression(type_),
         input(std::move(input_))
     {}
     

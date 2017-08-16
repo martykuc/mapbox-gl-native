@@ -29,7 +29,7 @@ public:
 
 EvaluationResult Expression::evaluate(float z, const Feature& feature) const {
     GeoJSONFeature f(feature);
-    return this->evaluate(EvaluationParameters {z, &f});
+    return this->evaluate(EvaluationParameters(z, &f));
 }
 
 } // namespace expression

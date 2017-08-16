@@ -79,9 +79,9 @@ private:
             if(!arg) return arg.error();
         }
         // TODO: assert correct runtime type of each arg value
-        const R& result = evaluate(evaluationParameters, detail::get<Params>(*(evaluated.at(I)))...);
-        if (!result) return result.error();
-        return *result;
+        const R& value = evaluate(evaluationParameters, detail::get<Params>(*(evaluated.at(I)))...);
+        if (!value) return value.error();
+        return *value;
     }
     
     R (*evaluate)(const EvaluationParameters&, Params...);
@@ -115,9 +115,9 @@ struct Signature<R (const Varargs<T>&)> : SignatureBase {
             if(!evaluatedArg) return evaluatedArg.error();
             evaluated.push_back(*evaluatedArg);
         }
-        const R& result = evaluate(evaluated);
-        if (!result) return result.error();
-        return *result;
+        const R& value = evaluate(evaluated);
+        if (!value) return value.error();
+        return *value;
     }
     
     R (*evaluate)(const Varargs<T>&);
@@ -154,9 +154,9 @@ private:
             if(!arg) return arg.error();
         }
         // TODO: assert correct runtime type of each arg value
-        const R& result = evaluate(detail::get<Params>(*(evaluated.at(I)))...);
-        if (!result) return result.error();
-        return *result;
+        const R& value = evaluate(detail::get<Params>(*(evaluated.at(I)))...);
+        if (!value) return value.error();
+        return *value;
     }
 };
 
@@ -173,7 +173,7 @@ struct Signature<R (T::*)(Params...) const>
 template <class T, class R, class... Params>
 struct Signature<R (T::*)(Params...)>
     : Signature<R (Params...)>
-{ using Signature<R (T::*)(Params...)>::Signature; };
+{ using Signature<R (Params...)>::Signature; };
 
 template <class Lambda>
 struct Signature<Lambda, std::enable_if_t<std::is_class<Lambda>::value>>
@@ -182,14 +182,13 @@ struct Signature<Lambda, std::enable_if_t<std::is_class<Lambda>::value>>
 
 class CompoundExpressionBase : public Expression {
 public:
-    CompoundExpressionBase(std::string name_, type::Type type) :
-        Expression(std::move(type)),
+    CompoundExpressionBase(std::string name_, type::Type type_) :
+        Expression(std::move(type_)),
         name(std::move(name_))
     {}
     
     std::string getName() { return name; }
-    
-    virtual ~CompoundExpressionBase() override = default;
+
 private:
     std::string name;
 };
@@ -199,10 +198,10 @@ class CompoundExpression : public CompoundExpressionBase {
 public:
     using Args = typename Signature::Args;
     
-    CompoundExpression(const std::string& name,
+    CompoundExpression(const std::string& name_,
                        Signature signature_,
                        typename Signature::Args args_) :
-        CompoundExpressionBase(name, signature_.result),
+        CompoundExpressionBase(name_, signature_.result),
         signature(signature_),
         args(std::move(args_))
     {}

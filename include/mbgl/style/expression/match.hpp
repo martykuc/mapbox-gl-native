@@ -16,11 +16,11 @@ class Match : public Expression {
 public:
     using Cases = std::unordered_map<T, std::shared_ptr<Expression>>;
 
-    Match(type::Type type,
+    Match(type::Type type_,
           std::unique_ptr<Expression> input_,
           Cases cases_,
           std::unique_ptr<Expression> otherwise_
-    ) : Expression(type),
+    ) : Expression(type_),
         input(std::move(input_)),
         cases(std::move(cases_)),
         otherwise(std::move(otherwise_))

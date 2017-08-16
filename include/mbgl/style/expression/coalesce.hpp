@@ -13,8 +13,8 @@ namespace expression {
 class Coalesce : public Expression {
 public:
     using Args = std::vector<std::unique_ptr<Expression>>;
-    Coalesce(const type::Type& type, Args args_) :
-        Expression(type),
+    Coalesce(const type::Type& type_, Args args_) :
+        Expression(type_),
         args(std::move(args_))
     {}
     

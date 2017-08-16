@@ -61,11 +61,11 @@ class Curve : public Expression {
 public:
     using Interpolator = InterpolatorT;
     
-    Curve(const type::Type& type,
+    Curve(const type::Type& type_,
           Interpolator interpolator_,
           std::unique_ptr<Expression> input_,
           std::map<float, std::unique_ptr<Expression>> stops_
-    ) : Expression(type),
+    ) : Expression(type_),
         interpolator(std::move(interpolator_)),
         input(std::move(input_)),
         stops(std::move(stops_))
@@ -124,7 +124,7 @@ public:
     }
     
     bool isZoomCurve() const {
-        if (CompoundExpressionBase* z = dynamic_cast<CompoundExpressionBase*>(input.get())) {
+        if (auto z = dynamic_cast<CompoundExpressionBase*>(input.get())) {
             return z->getName() == "zoom";
         }
         return false;

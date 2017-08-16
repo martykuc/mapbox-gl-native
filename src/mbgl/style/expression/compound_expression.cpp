@@ -46,8 +46,9 @@ static std::pair<std::string, Definition> define(std::string name, Evals... eval
     expand_pack(definition.push_back(std::make_unique<Signature<Evals>>(evalFunctions)));
     const auto& t0 = definition.at(0)->result;
     for (const auto& signature : definition) {
-        // TODO replace with real ==
-        assert(toString(t0) == toString(signature->result));
+        assert(t0 == signature->result);
+        (void)signature;
+        (void)t0;
     }
     return std::pair<std::string, Definition>(name, std::move(definition));
 }
